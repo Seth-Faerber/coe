@@ -15,6 +15,10 @@ from coe.storage.changelog_manager import add_change_log_entry
 from coe.storage.history_reader import read_all_results
 from coe.dashboard.generator import generate_dashboard
 
+_GREEN = "\033[92m"
+_RED = "\033[91m"
+_RESET = "\033[0m"
+
 def _find_tests_coe_dir() -> Path:
     """Find tests/coe directory starting from current directory going up."""
     current = Path.cwd()
@@ -121,7 +125,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
 
         write_result(result, prompt_name, tests_coe_dir)
 
-        status = "✓ PASS" if overall_passed else "✗ FAIL"
+        status = f"{_GREEN}✓ PASS{_RESET}" if overall_passed else f"{_RED}✗ FAIL{_RESET}"
         print(f"  [{i}/{num_runs}] {status}")
 
     print(f"\nResults: {passed_count}/{num_runs} passed ({100*passed_count//num_runs}%)")
