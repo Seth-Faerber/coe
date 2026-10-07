@@ -14,7 +14,9 @@ A lightweight CLI tool for testing and grading AI prompts using deterministic ch
 ## Installation
 
 ```bash
-pip install -e ~/Repos/coe
+git clone <this-repo>
+cd coe
+pip install -e .
 ```
 
 ## Quick Start
@@ -45,10 +47,10 @@ Create `tests/coe/my-prompt-eval.yml`:
 prompt-under-eval: |
   You are a helpful assistant. Answer the following question:
 
-test-input:
+test_input:
   question: What is 2+2?
 
-model_for_eval: claude-haiku-4-5-20241022
+model_for_eval: claude-haiku-5-5
 model_parameters:
   max_tokens: 1024
 
@@ -60,7 +62,7 @@ deterministic_checks:
 
 model_evaluation:
   enabled: true
-  model: claude-opus-5
+  model: claude-sonnet-5-5
   rubric: |
     Score 1-5 based on:
     - Correctness of answer
@@ -84,8 +86,16 @@ coe test my-prompt-eval.yml
 Specify number of runs:
 
 ```bash
-coe test my-prompt-eval.yml --runs 50
+coe test my-prompt-eval.yml -r 50
 ```
+
+### 5. View the Dashboard
+
+```bash
+coe dashboard
+```
+
+Opens `tests/coe/results/index.html` in your default browser.
 
 ## Configuration
 
@@ -104,7 +114,7 @@ prompt-under-eval: ../prompts/my-prompt.md
 
 ### model_for_eval
 
-The Claude model to use for generation (e.g., `claude-haiku-4-5-20241022`)
+The Claude model to use for generation (e.g., `claude-haiku-5-5`)
 
 ### model_parameters
 
@@ -144,6 +154,14 @@ deterministic_checks:
       - "badword2"
 ```
 
+### setup
+
+Optional shell script to run before each evaluation run. Path is relative to the repo root.
+
+```yaml
+setup: scripts/reset_eval.sh
+```
+
 ### model_evaluation
 
 Optional Claude-based grading:
@@ -151,7 +169,7 @@ Optional Claude-based grading:
 ```yaml
 model_evaluation:
   enabled: true
-  model: claude-opus-5  # Optional; defaults to opus
+  model: claude-sonnet-5-5  # Optional; defaults to the generation model
   rubric: |
     Grade 1-5 based on:
     - Relevance to prompt

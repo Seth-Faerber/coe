@@ -41,6 +41,17 @@ def load_eval_config(yaml_path: str) -> Dict[str, Any]:
     config['_eval_file_path'] = yaml_path
     config['_prompt_name'] = yaml_path.stem
 
+    if 'setup' in config:
+        repo_root = _find_repo_root(yaml_path)
+        setup_path = Path(config['setup']).expanduser()
+        if not setup_path.is_absolute():
+            setup_path = repo_root / setup_path
+        config['_setup_script'] = setup_path
+        config['_repo_root'] = repo_root
+    else:
+        config['_setup_script'] = None
+        config['_repo_root'] = None
+
     return config
 
 def validate_config(config: Dict[str, Any]) -> None:
@@ -56,6 +67,9 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError("Each deterministic check must have 'name', 'type', and 'values'")
         if check['type'] not in ('contains', 'does_not_contain'):
             raise ValueError(f"Invalid check type: {check['type']}")
+
+    if 'setup' in config and not isinstance(config['setup'], str):
+        raise ValueError("'setup' must be a string (path to a script)")
 
     if 'model_evaluation' in config:
         model_eval = config['model_evaluation']
@@ -73,7 +87,7 @@ def _resolve_prompt(prompt_under_eval: str, yaml_path: Path) -> Tuple[str, str]:
     Otherwise, treat it as inline prompt text.
     """
     # Check if it's a file path
-    potential_path = Path(prompt_under_eval)
+    potential_path = Path(prompt_under_eval).expanduser()
 
     # Handle relative paths relative to the yaml file directory
     if not potential_path.is_absolute():

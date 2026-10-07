@@ -38,7 +38,9 @@ your-repo/
    ```
 
 4. **View results**:
-   Open `tests/coe/results/index.html` in your browser
+   ```bash
+   coe dashboard
+   ```
 
 ## Example Configurations
 
@@ -50,7 +52,7 @@ prompt-under-eval: Please respond with exactly "yes" or "no"
 test-input:
   question: Is AI useful?
 
-model_for_eval: claude-haiku-4-5-20241022
+model_for_eval: claude-haiku-5-5
 model_parameters:
   max_tokens: 100
 
@@ -71,7 +73,7 @@ test-input:
   genre: science fiction
   length: short story
 
-model_for_eval: claude-haiku-4-5-20241022
+model_for_eval: claude-haiku-5-5
 model_parameters:
   max_tokens: 2048
 

@@ -1,6 +1,7 @@
 import sys
 import os
 import argparse
+import subprocess
 import webbrowser
 from pathlib import Path
 from datetime import datetime
@@ -69,6 +70,15 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
     print(f"  Prompt source: {prompt_source}")
 
     for i in range(1, num_runs + 1):
+        if config.get('_setup_script'):
+            result = subprocess.run(
+                ["bash", str(config['_setup_script'])],
+                cwd=str(config['_repo_root']),
+            )
+            if result.returncode != 0:
+                print(f"  Setup script failed (exit {result.returncode}). Aborting.")
+                sys.exit(1)
+
         start_time = datetime.now()
         test_input_str = _format_test_input(test_input)
 
@@ -197,6 +207,8 @@ prompt tips:
         epilog="""
 prompt-under-eval in your YAML can be an inline string or a relative file path.
 If the path resolves to an existing file, coe reads its contents as the prompt.
+
+setup: reset_eval.sh  # optional; path relative to repo root, runs before each run
 """,
     )
     test_parser.add_argument('eval_file', nargs='?', help='YAML filename in tests/coe/ to run (omit to run all)')

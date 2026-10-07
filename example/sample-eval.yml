@@ -16,7 +16,7 @@ test_input:
 
 # MODEL FOR GENERATION
 # Which Claude model to use for generating outputs
-model_for_eval: claude-haiku-4-5-20241022
+model_for_eval: claude-haiku-5-5
 
 # MODEL PARAMETERS
 model_parameters:
@@ -40,7 +40,7 @@ deterministic_checks:
 # Use Claude to grade outputs against a rubric
 model_evaluation:
   enabled: true
-  model: claude-opus-5  # Grading model (more capable)
+  model: claude-sonnet-5-5  # Grading model (more capable)
   rubric: |
     Score 1-5 based on:
     1. **Accuracy**: Is the information factually correct?
