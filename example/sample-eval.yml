@@ -1,0 +1,52 @@
+# Example evaluation configuration for coe
+# Copy this to tests/coe/[your-eval-name].yml and customize
+
+# PROMPT DEFINITION
+# Can be inline text (as below) or a file path
+prompt-under-eval: |
+  You are a helpful assistant. Your task is to answer the user's question clearly and concisely.
+  Always provide a direct answer before elaborating.
+
+# TEST INPUT
+# Dictionary of values to pass to the prompt
+test_input:
+  topic: climate change
+  audience: general public
+  tone: informative
+
+# MODEL FOR GENERATION
+# Which Claude model to use for generating outputs
+model_for_eval: claude-haiku-4-5-20241022
+
+# MODEL PARAMETERS
+model_parameters:
+  max_tokens: 1024
+
+# DETERMINISTIC CHECKS
+# Validate outputs with pattern matching
+deterministic_checks:
+  - name: Contains core concept
+    type: contains
+    values:
+      - "climate"
+      - "warming"
+
+  - name: No profanity
+    type: does_not_contain
+    values:
+      - "badword"
+
+# MODEL EVALUATION (Optional)
+# Use Claude to grade outputs against a rubric
+model_evaluation:
+  enabled: true
+  model: claude-opus-5  # Grading model (more capable)
+  rubric: |
+    Score 1-5 based on:
+    1. **Accuracy**: Is the information factually correct?
+    2. **Clarity**: Is it easy to understand?
+    3. **Completeness**: Does it address the question fully?
+    4. **Tone**: Is the tone appropriate for the audience?
+    5. **Structure**: Is the answer well-organized?
+
+    A score of 4+ is considered passing.

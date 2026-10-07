@@ -1,0 +1,207 @@
+Metadata-Version: 2.4
+Name: coe
+Version: 0.1.0
+Summary: CLI evaluation framework for testing and grading AI prompts
+Author: Seth Faerber
+Author-email: seth.faerber@improving.com
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Testing
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: anthropic>=0.39.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: jinja2>=3.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# coe - CLI Evaluation Framework
+
+A lightweight CLI tool for testing and grading AI prompts using deterministic checks and model-based evaluation.
+
+## Features
+
+- **Easy Configuration**: Define evaluations in simple YAML files
+- **Flexible Prompts**: Support inline prompts or file-based prompts
+- **Deterministic Checks**: Validate outputs with string matching rules
+- **Model Evaluation**: Use Claude to grade outputs against custom rubrics
+- **Results Tracking**: Track evaluation history with automatic dashboards
+- **Per-Repository Isolation**: Each repo maintains its own evaluation results
+
+## Installation
+
+```bash
+pip install -e ~/Repos/coe
+```
+
+## Quick Start
+
+### 1. Set Up Your Repository
+
+In your repository root, create a tests/coe directory:
+
+```bash
+mkdir -p tests/coe
+```
+
+### 2. Create a .env File (optional, in coe repo)
+
+If you haven't already, configure credentials in the coe repository:
+
+```bash
+cd ~/Repos/coe
+cp .env.example .env
+# Edit .env and add your Anthropic API key
+```
+
+### 3. Create an Evaluation Config
+
+Create `tests/coe/my-prompt-eval.yml`:
+
+```yaml
+prompt-under-eval: |
+  You are a helpful assistant. Answer the following question:
+
+test-input:
+  question: What is 2+2?
+
+model_for_eval: claude-haiku-4-5-20241022
+model_parameters:
+  max_tokens: 1024
+
+deterministic_checks:
+  - name: Contains answer
+    type: contains
+    values:
+      - "4"
+
+model_evaluation:
+  enabled: true
+  model: claude-opus-5
+  rubric: |
+    Score 1-5 based on:
+    - Correctness of answer
+    - Clarity of explanation
+```
+
+### 4. Run Evaluations
+
+From your repository root:
+
+```bash
+coe test
+```
+
+Run a specific evaluation:
+
+```bash
+coe test my-prompt-eval.yml
+```
+
+Specify number of runs:
+
+```bash
+coe test my-prompt-eval.yml --runs 50
+```
+
+## Configuration
+
+### prompt-under-eval
+
+Can be either inline text or a file path:
+
+```yaml
+# Inline prompt
+prompt-under-eval: |
+  Your prompt text here...
+
+# Or file reference (relative to the .yml file)
+prompt-under-eval: ../prompts/my-prompt.md
+```
+
+### model_for_eval
+
+The Claude model to use for generation (e.g., `claude-haiku-4-5-20241022`)
+
+### model_parameters
+
+Parameters for the generation model:
+
+```yaml
+model_parameters:
+  max_tokens: 1024
+```
+
+### test_input
+
+Dictionary of inputs to pass to your prompt:
+
+```yaml
+test_input:
+  user_question: What is AI?
+  context: General knowledge
+```
+
+### deterministic_checks
+
+Array of string matching checks:
+
+```yaml
+deterministic_checks:
+  - name: Must contain conclusion
+    type: contains
+    values:
+      - "therefore"
+      - "in conclusion"
+
+  - name: No profanity
+    type: does_not_contain
+    values:
+      - "badword1"
+      - "badword2"
+```
+
+### model_evaluation
+
+Optional Claude-based grading:
+
+```yaml
+model_evaluation:
+  enabled: true
+  model: claude-opus-5  # Optional; defaults to opus
+  rubric: |
+    Grade 1-5 based on:
+    - Relevance to prompt
+    - Quality of reasoning
+```
+
+## Results
+
+Results are saved to `tests/coe/results/`:
+
+- `[timestamp].json` - Individual run results
+- `index.html` - Interactive dashboard showing all results
+- `static/` - Supporting assets for the dashboard
+
+Open `tests/coe/results/index.html` in your browser to view the evaluation timeline.
+
+## Example
+
+See `example/sample-eval.yml` for a complete example evaluation.
+
+## License
+
+MIT
