@@ -18,11 +18,12 @@ def write_result(result: Dict[str, Any], prompt_name: str, tests_coe_dir: Path) 
     results_dir = tests_coe_dir / 'results'
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate timestamp for the result file
+    result_with_name = {'prompt_name': prompt_name, **result}
+
     now = datetime.now().isoformat().replace(':', '-').replace('.', '-')
     result_file = results_dir / f"{now}.json"
 
     with open(result_file, 'w') as f:
-        json.dump(result, f, indent=2)
+        json.dump(result_with_name, f, indent=2)
 
     return result_file

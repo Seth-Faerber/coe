@@ -1,6 +1,7 @@
 import sys
 import os
 import argparse
+import webbrowser
 from pathlib import Path
 from datetime import datetime
 from typing import List
@@ -13,7 +14,7 @@ from coe.evaluators.model_grader import run_model_evaluation
 from coe.storage.results_writer import write_result
 from coe.storage.changelog_manager import add_change_log_entry
 from coe.storage.history_reader import read_all_results
-from coe.dashboard.generator import generate_dashboard
+from coe.dashboard.generator import generate_full_dashboard
 
 _GREEN = "\033[92m"
 _RED = "\033[91m"
@@ -129,7 +130,18 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
         print(f"  [{i}/{num_runs}] {status}")
 
     print(f"\nResults: {passed_count}/{num_runs} passed ({100*passed_count//num_runs}%)")
-    generate_dashboard(prompt_name, tests_coe_dir)
+    generate_full_dashboard(tests_coe_dir)
+
+def cmd_dashboard(args):
+    """Handle 'coe dashboard' command — open index.html in the default browser."""
+    tests_coe_dir = _find_tests_coe_dir()
+    index_path = (tests_coe_dir / 'results' / 'index.html').resolve()
+    if not index_path.exists():
+        print("No dashboard found. Run 'coe test' first to generate results.")
+        sys.exit(1)
+    url = index_path.as_uri()
+    webbrowser.open(url)
+    print(f"Opening {index_path}")
 
 def cmd_test(args):
     """Handle 'coe test' command."""
@@ -161,13 +173,38 @@ def cmd_test(args):
             run_eval(eval_file, args.runs, tests_coe_dir)
 
 def main():
-    parser = argparse.ArgumentParser(description='coe - CLI evaluation framework')
+    parser = argparse.ArgumentParser(
+        description='coe - CLI evaluation framework',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  coe test                        run all evals in tests/coe/
+  coe test my-eval.yml            run a single eval
+  coe test my-eval.yml -r 5      run 5 times instead of the default 20
+  coe dashboard                   open the results dashboard in your browser
+
+prompt tips:
+  In your YAML eval file, prompt-under-eval can be an inline string or a
+  relative file path -- if the path exists on disk, coe reads its contents.
+""",
+    )
     subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-    test_parser = subparsers.add_parser('test', help='Run evaluations')
-    test_parser.add_argument('eval_file', nargs='?', help='Specific .yml file to run (optional; runs all if omitted)')
+    test_parser = subparsers.add_parser(
+        'test',
+        help='Run evaluations from tests/coe/',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+prompt-under-eval in your YAML can be an inline string or a relative file path.
+If the path resolves to an existing file, coe reads its contents as the prompt.
+""",
+    )
+    test_parser.add_argument('eval_file', nargs='?', help='YAML filename in tests/coe/ to run (omit to run all)')
     test_parser.add_argument('-r', '--runs', type=int, default=20, help='Number of evaluation runs (default: 20)')
     test_parser.set_defaults(func=cmd_test)
+
+    dashboard_parser = subparsers.add_parser('dashboard', help='Open the results dashboard in the default browser')
+    dashboard_parser.set_defaults(func=cmd_dashboard)
 
     args = parser.parse_args()
 

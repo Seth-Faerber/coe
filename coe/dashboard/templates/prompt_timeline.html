@@ -3,145 +3,160 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ prompt_name }} - Timeline</title>
+    <title>coe Dashboard</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #f5f5f5;
             color: #333;
-            padding: 20px;
         }
 
-        .container {
+        .page-header {
+            background: #1e293b;
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            align-items: baseline;
+            gap: 16px;
+        }
+
+        .page-header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        #aggregateStats {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        .tab-bar {
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0 24px;
+            display: flex;
+            gap: 0;
+            overflow-x: auto;
+        }
+
+        .tab {
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color 0.1s, border-color 0.1s;
+        }
+
+        .tab:hover { color: #1e293b; }
+
+        .tab.active {
+            color: #2563eb;
+            border-bottom-color: #2563eb;
+        }
+
+        .content {
+            padding: 24px;
             max-width: 1200px;
             margin: 0 auto;
         }
 
-        .header {
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* Overview */
+        .prompt-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .prompt-card {
             background: white;
-            padding: 30px;
             border-radius: 8px;
-            margin-bottom: 30px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            border-left: 4px solid #ddd;
+            cursor: pointer;
+            transition: box-shadow 0.15s, transform 0.1s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
         }
 
-        .header h1 {
+        .prompt-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-1px);
+        }
+
+        .prompt-card.good { border-left-color: #059669; }
+        .prompt-card.ok   { border-left-color: #f59e0b; }
+        .prompt-card.bad  { border-left-color: #dc2626; }
+
+        .card-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+
+        .card-rate {
             font-size: 28px;
-            margin-bottom: 15px;
-            color: #222;
-        }
-
-        .header-stats {
-            display: flex;
-            gap: 30px;
-            flex-wrap: wrap;
-        }
-
-        .stat-item {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .stat-value {
-            font-size: 24px;
             font-weight: 700;
             color: #2563eb;
+            margin-bottom: 4px;
         }
 
-        .stat-value.pass-rate {
-            color: #059669;
+        .card-meta {
+            font-size: 12px;
+            color: #94a3b8;
         }
 
-        .back-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            color: #2563eb;
-            text-decoration: none;
-            font-size: 14px;
-        }
-
-        .back-link:hover {
-            text-decoration: underline;
-        }
-
-        .controls {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-
-        .selection-info {
-            font-size: 14px;
-            color: #666;
-            padding: 10px 0;
-        }
-
-        .selection-result {
-            font-weight: 600;
-            color: #059669;
-            padding: 10px 0;
-            min-height: 20px;
-        }
-
-        .timeline {
+        /* Per-prompt timeline */
+        .prompt-stats {
             display: flex;
-            flex-direction: column;
-            gap: 12px;
+            gap: 24px;
+            flex-wrap: wrap;
+            background: white;
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
         }
+
+        .stat-item { display: flex; flex-direction: column; gap: 4px; }
+        .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 22px; font-weight: 700; color: #2563eb; }
+        .stat-value.pass { color: #059669; }
+        .stat-value.fail { color: #dc2626; }
+
+        .selection-info { font-size: 13px; color: #94a3b8; margin-bottom: 4px; }
+        .selection-result { font-size: 13px; font-weight: 600; color: #059669; min-height: 18px; margin-bottom: 16px; }
+
+        .timeline { display: flex; flex-direction: column; gap: 8px; }
 
         .timeline-row {
             background: white;
             border-left: 4px solid #ddd;
-            padding: 15px;
-            border-radius: 0;
+            padding: 12px 16px;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: box-shadow 0.1s;
             position: relative;
         }
 
-        .timeline-row:hover {
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            border-left-color: #2563eb;
-        }
+        .timeline-row:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 
-        .timeline-row.selected {
-            background: #eff6ff;
-            border-left-color: #2563eb;
-        }
+        .timeline-row.pass { border-left-color: #059669; }
+        .timeline-row.fail { border-left-color: #dc2626; }
 
-        .timeline-row.pass {
-            border-left-color: #059669;
-        }
-
-        .timeline-row.fail {
-            border-left-color: #dc2626;
-        }
-
-        .timeline-row.pass.selected {
-            background: #f0fdf4;
-            border-left-color: #059669;
-        }
-
-        .timeline-row.fail.selected {
-            background: #fef2f2;
-            border-left-color: #dc2626;
-        }
+        .timeline-row.selected { background: #eff6ff; }
+        .timeline-row.pass.selected { background: #f0fdf4; }
+        .timeline-row.fail.selected { background: #fef2f2; }
 
         .timeline-row.has-change {
             background: #fffbeb;
@@ -151,174 +166,154 @@
         .timeline-row.has-change::before {
             content: "★";
             position: absolute;
-            left: 5px;
-            top: 0;
+            left: 4px;
+            top: 4px;
             color: #f59e0b;
-            font-size: 16px;
+            font-size: 14px;
         }
 
         .row-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            gap: 12px;
             flex-wrap: wrap;
-            gap: 10px;
         }
 
-        .row-timestamp {
-            font-size: 12px;
-            color: #666;
-            font-family: monospace;
-        }
+        .row-timestamp { font-size: 12px; color: #94a3b8; font-family: monospace; }
 
         .row-status {
             font-weight: 600;
             padding: 2px 8px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
+            text-transform: uppercase;
         }
 
-        .row-status.pass {
-            background: #dcfce7;
-            color: #166534;
-        }
+        .row-status.pass { background: #dcfce7; color: #166534; }
+        .row-status.fail { background: #fee2e2; color: #991b1b; }
 
-        .row-status.fail {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .row-timing {
-            font-size: 12px;
-            color: #999;
-        }
+        .row-timing { font-size: 12px; color: #cbd5e1; }
 
         .change-indicator {
             background: #fef3c7;
             border: 1px solid #f59e0b;
-            padding: 8px 12px;
+            padding: 6px 10px;
             border-radius: 4px;
-            margin: 10px 0;
-            font-size: 13px;
+            margin-top: 8px;
+            font-size: 12px;
             color: #92400e;
         }
 
         .row-details {
             display: none;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
-            font-size: 13px;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid #f1f5f9;
         }
 
-        .timeline-row.expanded .row-details {
-            display: block;
-        }
+        .timeline-row.expanded .row-details { display: block; }
 
-        .detail-section {
-            margin-bottom: 15px;
-        }
+        .detail-section { margin-bottom: 14px; }
 
         .detail-title {
+            font-size: 11px;
             font-weight: 600;
-            color: #222;
-            margin-bottom: 8px;
-            font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            color: #64748b;
+            margin-bottom: 6px;
         }
 
         .detail-content {
-            background: #f9f9f9;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
             padding: 10px 12px;
             border-radius: 4px;
-            font-family: monospace;
+            font-family: 'SF Mono', 'Fira Code', monospace;
             font-size: 12px;
             overflow-x: auto;
             white-space: pre-wrap;
             word-wrap: break-word;
-            max-height: 200px;
+            max-height: 400px;
             overflow-y: auto;
+            line-height: 1.5;
         }
 
         .check-item {
-            padding: 6px 0;
             display: flex;
-            gap: 10px;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .check-item:last-child { border-bottom: none; }
+
+        .check-subitem {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 3px 0 3px 24px;
             font-size: 12px;
+            color: #64748b;
+        }
+
+        .check-value {
+            font-family: monospace;
+            font-size: 11px;
         }
 
         .check-status {
             width: 16px;
             height: 16px;
+            flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
         }
 
-        .check-status.pass::before {
-            content: "✓";
-            color: #059669;
-            font-size: 14px;
-        }
-
-        .check-status.fail::before {
-            content: "✗";
-            color: #dc2626;
-            font-size: 14px;
-        }
+        .check-status.pass::before { content: "✓"; color: #059669; font-weight: 700; }
+        .check-status.fail::before { content: "✗"; color: #dc2626; font-weight: 700; }
 
         .empty-state {
             text-align: center;
-            padding: 40px;
+            padding: 48px 24px;
             background: white;
             border-radius: 8px;
-            color: #999;
+            color: #94a3b8;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <a href="index.html" class="back-link">← Back to Dashboard</a>
+    <div class="page-header">
+        <h1>coe Dashboard</h1>
+        <span id="aggregateStats"></span>
+    </div>
 
-        <div class="header">
-            <h1>{{ prompt_name }}</h1>
-            <div class="header-stats">
-                <div class="stat-item">
-                    <span class="stat-label">Total Runs</span>
-                    <span class="stat-value" id="totalRuns">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Passed</span>
-                    <span class="stat-value" id="passedCount">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Failed</span>
-                    <span class="stat-value" id="failedCount">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Overall Pass Rate</span>
-                    <span class="stat-value pass-rate" id="overallPassRate">0%</span>
-                </div>
-            </div>
-        </div>
+    <div class="tab-bar" id="tabBar"></div>
 
-        <div class="controls">
-            <div class="selection-info">
-                Shift+click to select a range of rows, then view the calculated pass rate below.
-            </div>
-            <div class="selection-result" id="selectionResult"></div>
-        </div>
-
-        <div class="timeline" id="timeline"></div>
+    <div class="content">
+        <div class="tab-panel active" id="tab-overview"></div>
+        <!-- Per-prompt panels inserted here by JS -->
     </div>
 
     <script src="./static/dashboard.js"></script>
     <script>
-        const evalData = {{ eval_data_json | safe }};
-        initializeTimeline(evalData);
+        const dashboardData = {{ dashboard_data_json | safe }};
+
+        // Create per-prompt panel placeholders before initializing
+        const content = document.querySelector('.content');
+        dashboardData.prompts.forEach((_, i) => {
+            const panel = document.createElement('div');
+            panel.className = 'tab-panel';
+            panel.id = `tab-prompt-${i}`;
+            content.appendChild(panel);
+        });
+
+        initializeDashboard(dashboardData);
     </script>
 </body>
 </html>
