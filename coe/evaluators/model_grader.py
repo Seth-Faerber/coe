@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from typing import Dict, Any
 from anthropic import Anthropic
@@ -15,10 +16,13 @@ def run_model_evaluation(
     test_input: Dict[str, Any],
     model_eval_config: Dict[str, Any],
     grader_model: str,
-    client: Anthropic
 ) -> Dict[str, Any]:
     if not model_eval_config.get('enabled'):
         return None
+
+    api_key = os.environ.get('ANTHROPIC_AUTH_TOKEN') or os.environ.get('ANTHROPIC_API_KEY')
+    base_url = os.environ.get('ANTHROPIC_BASE_URL')
+    client = Anthropic(api_key=api_key, base_url=base_url)
 
     model = grader_model or model_eval_config.get('model', 'claude-haiku-4-5-20251001')
     rubric = model_eval_config.get('rubric', '')

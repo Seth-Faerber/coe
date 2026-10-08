@@ -61,8 +61,6 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
     api_key = os.environ.get('ANTHROPIC_AUTH_TOKEN') or os.environ.get('ANTHROPIC_API_KEY')
     base_url = os.environ.get('ANTHROPIC_BASE_URL')
 
-    client = Anthropic(api_key=api_key, base_url=base_url)
-
     passed_count = 0
     failed_count = 0
 
@@ -82,6 +80,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
         start_time = datetime.now()
         test_input_str = _format_test_input(test_input)
 
+        eval_client = Anthropic(api_key=api_key, base_url=base_url)
         messages = [
             {
                 "role": "user",
@@ -89,7 +88,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
             }
         ]
 
-        response = client.messages.create(
+        response = eval_client.messages.create(
             model=model,
             max_tokens=model_params.get('max_tokens', 1024),
             messages=messages,
@@ -112,7 +111,6 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
                 test_input,
                 config['model_evaluation'],
                 grader_model,
-                client,
             )
 
         overall_passed = det_passed
