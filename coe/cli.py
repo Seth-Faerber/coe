@@ -21,6 +21,12 @@ _GREEN = "\033[92m"
 _RED = "\033[91m"
 _RESET = "\033[0m"
 
+def _run_script(path: Path, cwd: Path) -> None:
+    result = subprocess.run(["bash", str(path)], cwd=str(cwd))
+    if result.returncode != 0:
+        print(f"  Script failed (exit {result.returncode}): {path.name}. Aborting.")
+        sys.exit(1)
+
 def _find_tests_coe_dir() -> Path:
     """Find tests/coe directory starting from current directory going up."""
     current = Path.cwd()
@@ -68,14 +74,8 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
     print(f"  Prompt source: {prompt_source}")
 
     for i in range(1, num_runs + 1):
-        if config.get('_setup_script'):
-            result = subprocess.run(
-                ["bash", str(config['_setup_script'])],
-                cwd=str(config['_repo_root']),
-            )
-            if result.returncode != 0:
-                print(f"  Setup script failed (exit {result.returncode}). Aborting.")
-                sys.exit(1)
+        if config.get('_setup_before'):
+            _run_script(config['_setup_before'], config['_repo_root'])
 
         start_time = datetime.now()
         test_input_str = _format_test_input(test_input)
@@ -133,6 +133,9 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
         }
 
         write_result(result, prompt_name, tests_coe_dir)
+
+        if config.get('_setup_after'):
+            _run_script(config['_setup_after'], config['_repo_root'])
 
         status = f"{_GREEN}✓ PASS{_RESET}" if overall_passed else f"{_RED}✗ FAIL{_RESET}"
         print(f"  [{i}/{num_runs}] {status}")
@@ -206,7 +209,9 @@ prompt tips:
 prompt-under-eval in your YAML can be an inline string or a relative file path.
 If the path resolves to an existing file, coe reads its contents as the prompt.
 
-setup: reset_eval.sh  # optional; path relative to repo root, runs before each run
+setup:
+  before: scripts/before.sh  # optional; runs before each model call
+  after: scripts/after.sh    # optional; runs after each result is written
 """,
     )
     test_parser.add_argument('eval_file', nargs='?', help='YAML filename in tests/coe/ to run (omit to run all)')

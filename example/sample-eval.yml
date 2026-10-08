@@ -22,6 +22,12 @@ model_for_eval: claude-haiku-5-5
 model_parameters:
   max_tokens: 1024
 
+# SETUP HOOKS (Optional)
+# Shell scripts that run before/after each model call, relative to repo root.
+# setup:
+#   before: scripts/seed_data.sh
+#   after: scripts/cleanup.sh
+
 # DETERMINISTIC CHECKS
 # Validate outputs with pattern matching
 deterministic_checks:

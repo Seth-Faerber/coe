@@ -43,13 +43,18 @@ def load_eval_config(yaml_path: str) -> Dict[str, Any]:
 
     if 'setup' in config:
         repo_root = _find_repo_root(yaml_path)
-        setup_path = Path(config['setup']).expanduser()
-        if not setup_path.is_absolute():
-            setup_path = repo_root / setup_path
-        config['_setup_script'] = setup_path
+        setup = config['setup']
+
+        def _resolve(script: str) -> Path:
+            p = Path(script).expanduser()
+            return p if p.is_absolute() else repo_root / p
+
+        config['_setup_before'] = _resolve(setup['before']) if 'before' in setup else None
+        config['_setup_after'] = _resolve(setup['after']) if 'after' in setup else None
         config['_repo_root'] = repo_root
     else:
-        config['_setup_script'] = None
+        config['_setup_before'] = None
+        config['_setup_after'] = None
         config['_repo_root'] = None
 
     return config
@@ -68,8 +73,19 @@ def validate_config(config: Dict[str, Any]) -> None:
         if check['type'] not in ('contains', 'does_not_contain'):
             raise ValueError(f"Invalid check type: {check['type']}")
 
-    if 'setup' in config and not isinstance(config['setup'], str):
-        raise ValueError("'setup' must be a string (path to a script)")
+    if 'setup' in config:
+        setup = config['setup']
+        if not isinstance(setup, dict):
+            raise ValueError("'setup' must be a dict with optional 'before' and/or 'after' keys")
+        known_keys = {'before', 'after'}
+        unknown = set(setup.keys()) - known_keys
+        if unknown:
+            raise ValueError(f"'setup' has unknown keys: {', '.join(sorted(unknown))}")
+        if not setup:
+            raise ValueError("'setup' must have at least one of 'before' or 'after'")
+        for key in known_keys:
+            if key in setup and not isinstance(setup[key], str):
+                raise ValueError(f"'setup.{key}' must be a string (path to a script)")
 
     if 'model_evaluation' in config:
         model_eval = config['model_evaluation']
