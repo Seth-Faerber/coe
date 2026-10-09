@@ -6,7 +6,8 @@ A lightweight CLI tool for testing and grading AI prompts using deterministic ch
 
 - **Easy Configuration**: Define evaluations in simple YAML files
 - **Flexible Prompts**: Support inline prompts or file-based prompts
-- **Deterministic Checks**: Validate outputs with string matching rules
+- **Two Runners**: Direct Anthropic API calls, or Claude Code CLI with full tool access
+- **Deterministic Checks**: Validate outputs and file changes with string matching rules
 - **Model Evaluation**: Use Claude to grade outputs against custom rubrics
 - **Results Tracking**: Track evaluation history with automatic dashboards
 - **Per-Repository Isolation**: Each repo maintains its own evaluation results
@@ -108,26 +109,54 @@ Can be either inline text or a file path:
 prompt-under-eval: |
   Your prompt text here...
 
-# Or file reference (relative to the .yml file)
-prompt-under-eval: ../prompts/my-prompt.md
+# Or file reference (absolute path or relative to the .yml file)
+prompt-under-eval: ~/.claude/skills/my-skill/SKILL.md
 ```
 
 ### model_for_eval
 
-The Claude model to use for generation (e.g., `claude-haiku-5-5`)
+The Claude model to use for generation (e.g., `claude-haiku-5-5`, `claude-sonnet-5-5`). Always required. For the `claude-code` runner this is passed as `--model` to the Claude Code CLI.
+
+### runner
+
+Controls how the prompt is executed. Optional; defaults to `api`.
+
+| Value | Behavior |
+|---|---|
+| `api` | Calls the Anthropic API directly. Fast; the model has no tool access. |
+| `claude-code` | Spawns `claude -p` as a subprocess in the repo directory. The model has full tool access (Bash, Read, Edit, Write, etc.) and can modify files. Use this for skill evals. |
+
+```yaml
+runner: claude-code
+```
+
+### claude_code_options
+
+Options for the `claude-code` runner. Ignored when `runner: api`.
+
+```yaml
+claude_code_options:
+  dangerously_skip_permissions: true   # bypass permission prompts (default: true)
+  max_turns: 15                        # limit agentic turns (optional)
+  allowed_tools:                       # restrict which tools Claude can use (optional)
+    - Bash
+    - Read
+    - Edit
+    - Write
+```
 
 ### model_parameters
 
-Parameters for the generation model:
+Parameters for the `api` runner. Optional; defaults to `max_tokens: 1024`. Ignored when `runner: claude-code`.
 
 ```yaml
 model_parameters:
-  max_tokens: 1024
+  max_tokens: 4096
 ```
 
 ### test_input
 
-Dictionary of inputs to pass to your prompt:
+Dictionary of inputs appended to the prompt after a separator. Optional.
 
 ```yaml
 test_input:
@@ -137,7 +166,10 @@ test_input:
 
 ### deterministic_checks
 
-Array of string matching checks:
+Array of string matching checks. Four types are supported:
+
+- `contains` / `does_not_contain` — match against the model's text response
+- `file_contains` / `file_does_not_contain` — match against a file on disk; `file` is relative to the repo root. Use these with `runner: claude-code` to verify the model actually changed the right files.
 
 ```yaml
 deterministic_checks:
@@ -152,28 +184,44 @@ deterministic_checks:
     values:
       - "badword1"
       - "badword2"
+
+  - name: Output file has expected line
+    type: file_contains
+    file: path/to/output.md    # relative to repo root
+    values:
+      - "[x] Task is complete"
+
+  - name: Output file has no unchecked marker
+    type: file_does_not_contain
+    file: path/to/output.md
+    values:
+      - "[ ] Task is complete"
 ```
 
 ### setup
 
-Optional shell script to run before each evaluation run. Path is relative to the repo root.
+Optional shell scripts to run before and/or after each model call. Paths are relative to the repo root. Use `before` to reset state and `after` to clean up.
 
 ```yaml
-setup: scripts/reset_eval.sh
+setup:
+  before: tests/coe/reset_eval.sh
+  after: tests/coe/reset_eval.sh
 ```
 
 ### model_evaluation
 
-Optional Claude-based grading:
+Optional Claude-based grading via a direct API call. Always uses the Anthropic API regardless of `runner`.
 
 ```yaml
 model_evaluation:
   enabled: true
-  model: claude-sonnet-5-5  # Optional; defaults to the generation model
+  model: claude-sonnet-5-5  # Optional; defaults to model_for_eval
   rubric: |
     Grade 1-5 based on:
     - Relevance to prompt
     - Quality of reasoning
+
+    Return JSON: {"score": <1-5>, "reasoning": "<brief explanation>"}
 ```
 
 ## Results
@@ -188,7 +236,7 @@ Open `tests/coe/results/index.html` in your browser to view the evaluation timel
 
 ## Example
 
-See `example/sample-eval.yml` for a complete example evaluation.
+See `example/sample-eval.yml` for a complete example with both runner types shown.
 
 ## License
 

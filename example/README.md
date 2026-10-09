@@ -64,6 +64,38 @@ deterministic_checks:
       - "no"
 ```
 
+### With File-Based Checks (Integration Tests)
+
+Use `file_contains` / `file_does_not_contain` when the skill edits a file rather than printing output. The `file` path is relative to the repo root.
+
+```yaml
+prompt-under-eval: ./prompts/update-checklist.md
+
+test_input:
+  codebase_context: "src/app/api/health/route.ts — GET /api/health implemented"
+
+model_for_eval: claude-sonnet-5-5
+model_parameters:
+  max_tokens: 2048
+
+setup:
+  before: scripts/reset_checklist.sh   # restore the file to its unchecked state
+  after: scripts/reset_checklist.sh
+
+deterministic_checks:
+  - name: Completed item is checked off
+    type: file_contains
+    file: human-tasks/checklist.md
+    values:
+      - "[x] Implement `GET /api/health` endpoint"
+
+  - name: Unimplemented item is not checked off
+    type: file_does_not_contain
+    file: human-tasks/checklist.md
+    values:
+      - "[x] Implement `POST /api/health` endpoint"
+```
+
 ### With Model-Based Grading
 
 ```yaml

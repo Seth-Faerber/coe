@@ -27,6 +27,19 @@ def _run_script(path: Path, cwd: Path) -> None:
         print(f"  Script failed (exit {result.returncode}): {path.name}. Aborting.")
         sys.exit(1)
 
+def _run_claude_code(prompt: str, model: str, options: dict, cwd: Path) -> str:
+    cmd = ['claude', '-p', '--model', model, '--output-format', 'text']
+    if options.get('dangerously_skip_permissions', True):
+        cmd.append('--dangerously-skip-permissions')
+    if 'max_turns' in options:
+        cmd.extend(['--max-turns', str(options['max_turns'])])
+    if 'allowed_tools' in options:
+        cmd.extend(['--allowedTools', ','.join(options['allowed_tools'])])
+    result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=str(cwd))
+    if result.returncode != 0:
+        print(f"  claude-code runner failed (exit {result.returncode}): {result.stderr[:200]}")
+    return result.stdout
+
 def _find_tests_coe_dir() -> Path:
     """Find tests/coe directory starting from current directory going up."""
     current = Path.cwd()
@@ -60,9 +73,10 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
     prompt_text = config['_prompt_text']
     prompt_source = config['_prompt_source']
 
-    test_input = config['test_input']
+    test_input = config.get('test_input')
     model = config['model_for_eval']
-    model_params = config['model_parameters']
+    model_params = config.get('model_parameters', {})
+    runner = config.get('_runner', 'api')
 
     api_key = os.environ.get('ANTHROPIC_AUTH_TOKEN') or os.environ.get('ANTHROPIC_API_KEY')
     base_url = os.environ.get('ANTHROPIC_BASE_URL')
@@ -72,38 +86,42 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
 
     print(f"Running {num_runs} evals for '{prompt_name}'...")
     print(f"  Prompt source: {prompt_source}")
+    print(f"  Runner: {runner}")
 
     for i in range(1, num_runs + 1):
         if config.get('_setup_before'):
             _run_script(config['_setup_before'], config['_repo_root'])
 
         start_time = datetime.now()
-        test_input_str = _format_test_input(test_input)
+        content = prompt_text
+        if test_input:
+            content = f"{prompt_text}\n\n---\n\n{_format_test_input(test_input)}"
 
-        eval_client = Anthropic(api_key=api_key, base_url=base_url)
-        messages = [
-            {
-                "role": "user",
-                "content": f"{prompt_text}\n\n---\n\n{test_input_str}",
-            }
-        ]
+        if runner == 'claude-code':
+            output = _run_claude_code(
+                content,
+                model,
+                config.get('_claude_code_options', {}),
+                config['_repo_root'],
+            )
+        else:
+            eval_client = Anthropic(api_key=api_key, base_url=base_url)
+            messages = [{"role": "user", "content": content}]
+            response = eval_client.messages.create(
+                model=model,
+                max_tokens=model_params.get('max_tokens', 1024),
+                messages=messages,
+            )
+            output = next((block.text for block in response.content if hasattr(block, 'text')), '')
 
-        response = eval_client.messages.create(
-            model=model,
-            max_tokens=model_params.get('max_tokens', 1024),
-            messages=messages,
-        )
-
-        output = response.content[0].text
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
-        det_results = run_deterministic_checks(output, config['deterministic_checks'])
+        det_results = run_deterministic_checks(output, config['deterministic_checks'], config.get('_repo_root'))
         det_passed = all(check_result['overall_pass'] for check_result in det_results.values())
 
         model_eval_results = None
         if config.get('model_evaluation', {}).get('enabled'):
-            # Use the model specified in model_evaluation config, or haiku as default
             grader_model = config['model_evaluation'].get('model', model)
             model_eval_results = run_model_evaluation(
                 output,
@@ -192,7 +210,7 @@ examples:
   coe test                        run all evals in tests/coe/
   coe test my-eval.yml            run a single eval
   coe test my-eval.yml -r 5      run 5 times instead of the default 20
-  coe dashboard                   open the results dashboard in your browser
+  coe dashboard                   open the results dashboard (also: coe dash, coe d)
 
 prompt tips:
   In your YAML eval file, prompt-under-eval can be an inline string or a
@@ -212,13 +230,22 @@ If the path resolves to an existing file, coe reads its contents as the prompt.
 setup:
   before: scripts/before.sh  # optional; runs before each model call
   after: scripts/after.sh    # optional; runs after each result is written
+
+runner: claude-code           # optional; spawns Claude Code CLI instead of direct API
+claude_code_options:
+  dangerously_skip_permissions: true
+  max_turns: 15
 """,
     )
     test_parser.add_argument('eval_file', nargs='?', help='YAML filename in tests/coe/ to run (omit to run all)')
     test_parser.add_argument('-r', '--runs', type=int, default=20, help='Number of evaluation runs (default: 20)')
     test_parser.set_defaults(func=cmd_test)
 
-    dashboard_parser = subparsers.add_parser('dashboard', help='Open the results dashboard in the default browser')
+    dashboard_parser = subparsers.add_parser(
+        'dashboard',
+        aliases=['dash', 'd'],
+        help='Open the results dashboard in the default browser',
+    )
     dashboard_parser.set_defaults(func=cmd_dashboard)
 
     args = parser.parse_args()

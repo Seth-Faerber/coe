@@ -11,12 +11,19 @@ def _find_repo_root(start_path: Path) -> Path:
         current = current.parent
     return start_path.parent
 
+VALID_RUNNERS = ('api', 'claude-code')
+
+VALID_CLAUDE_CODE_OPTIONS = {'dangerously_skip_permissions', 'max_turns', 'allowed_tools'}
+
 REQUIRED_FIELDS = {
-    'prompt-under-eval': (str,),  # Can be inline text or file path
-    'model_for_eval': str,
-    'model_parameters': dict,
-    'test_input': dict,
-    'deterministic_checks': list,
+    'prompt-under-eval': (str,),
+    'model_for_eval': (str,),
+    'deterministic_checks': (list,),
+}
+
+OPTIONAL_FIELDS = {
+    'test_input': (dict,),
+    'model_parameters': (dict,),
 }
 
 def load_eval_config(yaml_path: str) -> Dict[str, Any]:
@@ -41,8 +48,13 @@ def load_eval_config(yaml_path: str) -> Dict[str, Any]:
     config['_eval_file_path'] = yaml_path
     config['_prompt_name'] = yaml_path.stem
 
+    repo_root = _find_repo_root(yaml_path)
+    config['_repo_root'] = repo_root
+
+    config['_runner'] = config.get('runner', 'api')
+    config['_claude_code_options'] = config.get('claude_code_options', {})
+
     if 'setup' in config:
-        repo_root = _find_repo_root(yaml_path)
         setup = config['setup']
 
         def _resolve(script: str) -> Path:
@@ -51,11 +63,9 @@ def load_eval_config(yaml_path: str) -> Dict[str, Any]:
 
         config['_setup_before'] = _resolve(setup['before']) if 'before' in setup else None
         config['_setup_after'] = _resolve(setup['after']) if 'after' in setup else None
-        config['_repo_root'] = repo_root
     else:
         config['_setup_before'] = None
         config['_setup_after'] = None
-        config['_repo_root'] = None
 
     return config
 
@@ -67,11 +77,39 @@ def validate_config(config: Dict[str, Any]) -> None:
             type_names = ", ".join(t.__name__ for t in field_types)
             raise ValueError(f"Invalid type for {field}: expected {type_names}, got {type(config[field]).__name__}")
 
+    for field, field_types in OPTIONAL_FIELDS.items():
+        if field in config and not isinstance(config[field], field_types):
+            type_names = ", ".join(t.__name__ for t in field_types)
+            raise ValueError(f"Invalid type for {field}: expected {type_names}, got {type(config[field]).__name__}")
+
+    if 'runner' in config:
+        if config['runner'] not in VALID_RUNNERS:
+            raise ValueError(f"Invalid runner: '{config['runner']}'. Must be one of: {', '.join(VALID_RUNNERS)}")
+
+    if 'claude_code_options' in config:
+        opts = config['claude_code_options']
+        if not isinstance(opts, dict):
+            raise ValueError("'claude_code_options' must be a dict")
+        unknown = set(opts.keys()) - VALID_CLAUDE_CODE_OPTIONS
+        if unknown:
+            raise ValueError(f"'claude_code_options' has unknown keys: {', '.join(sorted(unknown))}")
+        if 'max_turns' in opts and not isinstance(opts['max_turns'], int):
+            raise ValueError("'claude_code_options.max_turns' must be an integer")
+        if 'allowed_tools' in opts and not isinstance(opts['allowed_tools'], list):
+            raise ValueError("'claude_code_options.allowed_tools' must be a list")
+        if 'dangerously_skip_permissions' in opts and not isinstance(opts['dangerously_skip_permissions'], bool):
+            raise ValueError("'claude_code_options.dangerously_skip_permissions' must be a boolean")
+
     for check in config['deterministic_checks']:
         if 'name' not in check or 'type' not in check or 'values' not in check:
             raise ValueError("Each deterministic check must have 'name', 'type', and 'values'")
-        if check['type'] not in ('contains', 'does_not_contain'):
+        VALID_CHECK_TYPES = ('contains', 'does_not_contain', 'file_contains', 'file_does_not_contain')
+        if check['type'] not in VALID_CHECK_TYPES:
             raise ValueError(f"Invalid check type: {check['type']}")
+        if check['type'] in ('file_contains', 'file_does_not_contain') and 'file' not in check:
+            raise ValueError(
+                f"Check '{check['name']}' with type '{check['type']}' must include a 'file' key"
+            )
 
     if 'setup' in config:
         setup = config['setup']

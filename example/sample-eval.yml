@@ -14,22 +14,45 @@ test_input:
   audience: general public
   tone: informative
 
+# RUNNER (optional, default: api)
+# Controls how the prompt is executed.
+#
+# runner: api         — calls the Anthropic API directly. Fast; no tool access.
+# runner: claude-code — spawns `claude -p` as a subprocess in your repo directory.
+#                       The model has full tool access and can modify files.
+#                       Use this for skill evals. model_parameters is ignored.
+runner: api
+
+# CLAUDE CODE OPTIONS (only used when runner: claude-code)
+# claude_code_options:
+#   skip_permissions: true   # bypass interactive permission prompts
+#   max_turns: 15            # limit agentic turns
+#   allowed_tools:           # restrict which tools are available
+#     - Bash
+#     - Read
+#     - Edit
+#     - Write
+
 # MODEL FOR GENERATION
-# Which Claude model to use for generating outputs
+# Which Claude model to use. For claude-code runner, passed as --model to the CLI.
 model_for_eval: claude-haiku-5-5
 
-# MODEL PARAMETERS
+# MODEL PARAMETERS (only used when runner: api, optional)
 model_parameters:
   max_tokens: 1024
 
-# SETUP HOOKS (Optional)
+# SETUP HOOKS (optional)
 # Shell scripts that run before/after each model call, relative to repo root.
 # setup:
-#   before: scripts/seed_data.sh
-#   after: scripts/cleanup.sh
+#   before: tests/coe/reset_eval.sh
+#   after: tests/coe/reset_eval.sh
 
 # DETERMINISTIC CHECKS
-# Validate outputs with pattern matching
+# Validate outputs with pattern matching.
+#
+# contains / does_not_contain       — match the model's text response
+# file_contains / file_does_not_contain — match a file on disk (path relative to
+#   repo root). Use these with runner: claude-code to verify file changes.
 deterministic_checks:
   - name: Contains core concept
     type: contains
@@ -42,11 +65,25 @@ deterministic_checks:
     values:
       - "badword"
 
-# MODEL EVALUATION (Optional)
-# Use Claude to grade outputs against a rubric
+  # File-based checks — useful when the skill edits files (runner: claude-code)
+  # - name: Output file updated correctly
+  #   type: file_contains
+  #   file: path/to/output.md    # relative to repo root
+  #   values:
+  #     - "[x] Task is complete"
+  #
+  # - name: Output file has no unchecked item
+  #   type: file_does_not_contain
+  #   file: path/to/output.md
+  #   values:
+  #     - "[ ] Task is complete"
+
+# MODEL EVALUATION (optional)
+# Grades the output using Claude via a direct API call.
+# Always uses the Anthropic API regardless of runner.
 model_evaluation:
   enabled: true
-  model: claude-sonnet-5-5  # Grading model (more capable)
+  model: claude-sonnet-5-5
   rubric: |
     Score 1-5 based on:
     1. **Accuracy**: Is the information factually correct?
@@ -56,3 +93,5 @@ model_evaluation:
     5. **Structure**: Is the answer well-organized?
 
     A score of 4+ is considered passing.
+
+    Return JSON: {"score": <1-5>, "reasoning": "<brief explanation>"}
