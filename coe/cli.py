@@ -27,18 +27,139 @@ def _run_script(path: Path, cwd: Path) -> None:
         print(f"  Script failed (exit {result.returncode}): {path.name}. Aborting.")
         sys.exit(1)
 
-def _run_claude_code(prompt: str, model: str, options: dict, cwd: Path) -> str:
-    cmd = ['claude', '-p', '--model', model, '--output-format', 'text']
-    if options.get('dangerously_skip_permissions', True):
-        cmd.append('--dangerously-skip-permissions')
-    if 'max_turns' in options:
-        cmd.extend(['--max-turns', str(options['max_turns'])])
-    if 'allowed_tools' in options:
-        cmd.extend(['--allowedTools', ','.join(options['allowed_tools'])])
-    result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=str(cwd))
-    if result.returncode != 0:
-        print(f"  claude-code runner failed (exit {result.returncode}): {result.stderr[:200]}")
-    return result.stdout
+_READ_FILE_TOOL = {
+    "name": "read_file",
+    "description": "Read the content of a file from disk.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Path relative to the working directory"},
+        },
+        "required": ["path"],
+    },
+}
+
+_WRITE_FILE_TOOL = {
+    "name": "write_file",
+    "description": "Write content to a file, creating or overwriting it.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Path relative to the working directory"},
+            "content": {"type": "string", "description": "Full file content to write"},
+        },
+        "required": ["path", "content"],
+    },
+}
+
+_LIST_DIR_TOOL = {
+    "name": "list_directory",
+    "description": "List the files and subdirectories in a directory.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Directory path relative to the working directory"},
+        },
+        "required": ["path"],
+    },
+}
+
+_RUN_COMMAND_TOOL = {
+    "name": "run_command",
+    "description": "Run a shell command in the working directory and return its stdout, stderr, and exit code.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "The shell command to run, e.g. 'bd list --status=open' or 'bd show beads-123'",
+            },
+        },
+        "required": ["command"],
+    },
+}
+
+_AVAILABLE_TOOLS = {
+    "list_directory": _LIST_DIR_TOOL,
+    "read_file": _READ_FILE_TOOL,
+    "write_file": _WRITE_FILE_TOOL,
+    "run_command": _RUN_COMMAND_TOOL,
+}
+
+
+def _execute_tool(name: str, input_dict: dict, cwd: Path) -> str:
+    try:
+        if name == "list_directory":
+            entries = sorted((cwd / input_dict["path"]).iterdir(), key=lambda p: (p.is_file(), p.name))
+            return "\n".join((e.name + "/" if e.is_dir() else e.name) for e in entries)
+        if name == "read_file":
+            return (cwd / input_dict["path"]).read_text()
+        if name == "write_file":
+            target = cwd / input_dict["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(input_dict["content"])
+            return "ok"
+        if name == "run_command":
+            result = subprocess.run(
+                input_dict["command"], shell=True, capture_output=True, text=True, cwd=str(cwd), timeout=30
+            )
+            return f"exit_code: {result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        return f"Unknown tool: {name}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: Anthropic, log_collector: list = None) -> tuple[str, bool]:
+    allowed = options.get("allowed_tools", list(_AVAILABLE_TOOLS.keys()))
+    tools = [_AVAILABLE_TOOLS[t] for t in allowed if t in _AVAILABLE_TOOLS]
+    max_turns = options.get("max_turns", 10)
+
+    messages = [{"role": "user", "content": prompt}]
+    final_text = ""
+
+    for _ in range(max_turns):
+        response = client.messages.create(
+            model=model,
+            max_tokens=8096,
+            tools=tools,
+            messages=messages,
+        )
+
+        for block in response.content:
+            if hasattr(block, "text"):
+                final_text = block.text
+                snippet = block.text.strip()
+                if snippet:
+                    msg = f"    ✎ {snippet[:100]}"
+                    print(msg, flush=True)
+                    if log_collector is not None:
+                        log_collector.append(msg.strip())
+            elif block.type == "tool_use":
+                preview = block.input.get("command") or block.input.get("path") or next(iter(block.input.values()), "")
+                msg = f"    → {block.name}: {str(preview)[:80]}"
+                print(msg, flush=True)
+                if log_collector is not None:
+                    log_collector.append(msg.strip())
+
+        if response.stop_reason == "end_turn":
+            break
+
+        if response.stop_reason == "tool_use":
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = _execute_tool(block.name, block.input, cwd)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": tool_results})
+        else:
+            break
+
+    return final_text, False
 
 def _find_tests_coe_dir() -> Path:
     """Find tests/coe directory starting from current directory going up."""
@@ -97,15 +218,18 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
         if test_input:
             content = f"{prompt_text}\n\n---\n\n{_format_test_input(test_input)}"
 
-        if runner == 'claude-code':
-            output = _run_claude_code(
+        eval_client = Anthropic(api_key=api_key, base_url=base_url)
+        log_collector = []
+        if runner == 'agentic':
+            output, _ = _run_with_tools(
                 content,
                 model,
-                config.get('_claude_code_options', {}),
+                config.get('_agent_options', {}),
                 config['_repo_root'],
+                eval_client,
+                log_collector=log_collector,
             )
         else:
-            eval_client = Anthropic(api_key=api_key, base_url=base_url)
             messages = [{"role": "user", "content": content}]
             response = eval_client.messages.create(
                 model=model,
@@ -148,6 +272,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
             'passed': overall_passed,
             'duration_seconds': duration,
             'timestamp': datetime.now().isoformat(),
+            'logs': log_collector,
         }
 
         write_result(result, prompt_name, tests_coe_dir)
@@ -231,10 +356,14 @@ setup:
   before: scripts/before.sh  # optional; runs before each model call
   after: scripts/after.sh    # optional; runs after each result is written
 
-runner: claude-code           # optional; spawns Claude Code CLI instead of direct API
-claude_code_options:
-  dangerously_skip_permissions: true
+runner: agentic               # optional; runs an SDK agentic tool loop instead of a single API call
+agent_options:
   max_turns: 15
+  allowed_tools:
+    - read_file
+    - write_file
+    - list_directory
+    - run_command         # runs shell commands; required for bd/beads and other CLIs
 """,
     )
     test_parser.add_argument('eval_file', nargs='?', help='YAML filename in tests/coe/ to run (omit to run all)')

@@ -6,10 +6,11 @@ A lightweight CLI tool for testing and grading AI prompts using deterministic ch
 
 - **Easy Configuration**: Define evaluations in simple YAML files
 - **Flexible Prompts**: Support inline prompts or file-based prompts
-- **Two Runners**: Direct Anthropic API calls, or Claude Code CLI with full tool access
+- **Two Runners**: Direct Anthropic API calls (`api`), or an agentic SDK loop with tool access (`agentic`)
 - **Deterministic Checks**: Validate outputs and file changes with string matching rules
 - **Model Evaluation**: Use Claude to grade outputs against custom rubrics
 - **Results Tracking**: Track evaluation history with automatic dashboards
+- **Activity Logs**: Agentic tool calls and text snippets are captured per run in the JSON output
 - **Per-Repository Isolation**: Each repo maintains its own evaluation results
 
 ## Installation
@@ -30,9 +31,9 @@ In your repository root, create a tests/coe directory:
 mkdir -p tests/coe
 ```
 
-### 2. Create a .env File (optional, in coe repo)
+### 2. Create a .env File (in coe repo)
 
-If you haven't already, configure credentials in the coe repository:
+Configure credentials in the coe repository. Required for `runner: claude-code`; optional if you only use `runner: api` with credentials already in your shell environment:
 
 ```bash
 cd ~/Repos/coe
@@ -124,25 +125,22 @@ Controls how the prompt is executed. Optional; defaults to `api`.
 | Value | Behavior |
 |---|---|
 | `api` | Calls the Anthropic API directly. Fast; the model has no tool access. |
-| `claude-code` | Spawns `claude -p` as a subprocess in the repo directory. The model has full tool access (Bash, Read, Edit, Write, etc.) and can modify files. Use this for skill evals. |
+| `agentic` | Runs an SDK agentic loop. The model can call `read_file`, `write_file`, and `list_directory` tools across multiple turns. Use this for evals that require file manipulation. |
 
 ```yaml
-runner: claude-code
+runner: agentic
 ```
 
-### claude_code_options
+### agent_options
 
-Options for the `claude-code` runner. Ignored when `runner: api`.
+Options for the `agentic` runner. Ignored when `runner: api`.
 
 ```yaml
-claude_code_options:
-  dangerously_skip_permissions: true   # bypass permission prompts (default: true)
-  max_turns: 15                        # limit agentic turns (optional)
-  allowed_tools:                       # restrict which tools Claude can use (optional)
-    - Bash
-    - Read
-    - Edit
-    - Write
+agent_options:
+  max_turns: 15               # limit agentic turns (default: 10)
+  allowed_tools:              # restrict which tools are available (default: all three)
+    - read_file
+    - list_directory
 ```
 
 ### model_parameters
@@ -233,6 +231,30 @@ Results are saved to `tests/coe/results/`:
 - `static/` - Supporting assets for the dashboard
 
 Open `tests/coe/results/index.html` in your browser to view the evaluation timeline.
+
+### Result JSON structure
+
+Each run produces a timestamped JSON file:
+
+```json
+{
+  "prompt_name": "my-prompt-eval",
+  "test_input": { "question": "What is 2+2?" },
+  "output": "The answer is 4.",
+  "deterministic_checks": { ... },
+  "model_evaluation": { "enabled": true, "score": 5, "reasoning": "...", "pass": true },
+  "passed": true,
+  "duration_seconds": 1.23,
+  "timestamp": "2026-10-13T15:30:45.123456",
+  "logs": ["→ list_directory: src/", "✎ Here is what I found..."]
+}
+```
+
+`logs` contains the activity from agentic runs (tool calls and text snippets). It is always present but empty for `runner: api`.
+
+### Dashboard
+
+The dashboard pass rate displayed on prompt cards, per-prompt stats, and the overview header is calculated over the **20 most recent runs** for each prompt, not the full history. All-time run counts are still shown for context.
 
 ## Example
 

@@ -18,12 +18,13 @@ function initializeDashboard(dashboardData) {
 
 function updateAggregateStats(dashboardData) {
     const totalRuns = dashboardData.all_prompts.reduce((s, p) => s + p.total_runs, 0);
-    const totalPassed = dashboardData.all_prompts.reduce((s, p) => s + p.passed, 0);
-    const rate = totalRuns > 0 ? (totalPassed / totalRuns * 100).toFixed(1) + '%' : '0%';
+    const recentRuns = dashboardData.all_prompts.reduce((s, p) => s + p.recent_runs, 0);
+    const recentPassed = dashboardData.all_prompts.reduce((s, p) => s + p.recent_passed, 0);
+    const rate = recentRuns > 0 ? (recentPassed / recentRuns * 100).toFixed(1) + '%' : '0%';
 
     const el = document.getElementById('aggregateStats');
     if (el) {
-        el.textContent = `${dashboardData.prompts.length} prompts · ${totalRuns} total runs · ${rate} pass rate`;
+        el.textContent = `${dashboardData.prompts.length} prompts · ${totalRuns} total runs · ${rate} pass rate (last 20)`;
     }
 }
 
@@ -108,7 +109,7 @@ function renderPromptTimeline(promptData, index) {
         <div class="stat-item"><span class="stat-label">Total Runs</span><span class="stat-value">${promptData.total_runs}</span></div>
         <div class="stat-item"><span class="stat-label">Passed</span><span class="stat-value pass">${promptData.passed}</span></div>
         <div class="stat-item"><span class="stat-label">Failed</span><span class="stat-value fail">${promptData.failed}</span></div>
-        <div class="stat-item"><span class="stat-label">Pass Rate</span><span class="stat-value">${escapeHtml(promptData.pass_rate)}</span></div>
+        <div class="stat-item"><span class="stat-label">Pass Rate (last 20)</span><span class="stat-value">${escapeHtml(promptData.pass_rate)}</span></div>
     `;
     panel.appendChild(statsEl);
 
@@ -220,6 +221,10 @@ function createTimelineRow(result, index, promptData, promptIndex) {
             <div class="detail-content">Score: ${me.score}/5 · ${me.pass ? 'PASS' : 'FAIL'}\n\n${escapeHtml(me.reasoning || '')}</div>
         `;
         details.appendChild(meSection);
+    }
+
+    if (result.logs && result.logs.length > 0) {
+        details.appendChild(makeDetailSection('Activity Log', result.logs.join('\n')));
     }
 
     content.appendChild(details);

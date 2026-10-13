@@ -11,9 +11,9 @@ def _find_repo_root(start_path: Path) -> Path:
         current = current.parent
     return start_path.parent
 
-VALID_RUNNERS = ('api', 'claude-code')
+VALID_RUNNERS = ('api', 'agentic')
 
-VALID_CLAUDE_CODE_OPTIONS = {'dangerously_skip_permissions', 'max_turns', 'allowed_tools'}
+VALID_AGENT_OPTIONS = {'max_turns', 'allowed_tools'}
 
 REQUIRED_FIELDS = {
     'prompt-under-eval': (str,),
@@ -52,7 +52,7 @@ def load_eval_config(yaml_path: str) -> Dict[str, Any]:
     config['_repo_root'] = repo_root
 
     config['_runner'] = config.get('runner', 'api')
-    config['_claude_code_options'] = config.get('claude_code_options', {})
+    config['_agent_options'] = config.get('agent_options', {})
 
     if 'setup' in config:
         setup = config['setup']
@@ -86,19 +86,22 @@ def validate_config(config: Dict[str, Any]) -> None:
         if config['runner'] not in VALID_RUNNERS:
             raise ValueError(f"Invalid runner: '{config['runner']}'. Must be one of: {', '.join(VALID_RUNNERS)}")
 
-    if 'claude_code_options' in config:
-        opts = config['claude_code_options']
+    if 'agent_options' in config:
+        opts = config['agent_options']
         if not isinstance(opts, dict):
-            raise ValueError("'claude_code_options' must be a dict")
-        unknown = set(opts.keys()) - VALID_CLAUDE_CODE_OPTIONS
+            raise ValueError("'agent_options' must be a dict")
+        unknown = set(opts.keys()) - VALID_AGENT_OPTIONS
         if unknown:
-            raise ValueError(f"'claude_code_options' has unknown keys: {', '.join(sorted(unknown))}")
+            raise ValueError(f"'agent_options' has unknown keys: {', '.join(sorted(unknown))}")
         if 'max_turns' in opts and not isinstance(opts['max_turns'], int):
-            raise ValueError("'claude_code_options.max_turns' must be an integer")
+            raise ValueError("'agent_options.max_turns' must be an integer")
         if 'allowed_tools' in opts and not isinstance(opts['allowed_tools'], list):
-            raise ValueError("'claude_code_options.allowed_tools' must be a list")
-        if 'dangerously_skip_permissions' in opts and not isinstance(opts['dangerously_skip_permissions'], bool):
-            raise ValueError("'claude_code_options.dangerously_skip_permissions' must be a boolean")
+            raise ValueError("'agent_options.allowed_tools' must be a list")
+        VALID_TOOLS = {'read_file', 'write_file', 'list_directory', 'run_command'}
+        if 'allowed_tools' in opts:
+            unknown_tools = set(opts['allowed_tools']) - VALID_TOOLS
+            if unknown_tools:
+                raise ValueError(f"'agent_options.allowed_tools' has unknown tools: {', '.join(sorted(unknown_tools))}")
 
     for check in config['deterministic_checks']:
         if 'name' not in check or 'type' not in check or 'values' not in check:

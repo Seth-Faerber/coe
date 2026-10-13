@@ -66,7 +66,7 @@ deterministic_checks:
 
 ### With File-Based Checks (Integration Tests)
 
-Use `file_contains` / `file_does_not_contain` when the skill edits a file rather than printing output. The `file` path is relative to the repo root.
+Use `file_contains` / `file_does_not_contain` when the skill edits a file rather than printing output. The `file` path is relative to the repo root. Pair with `runner: agentic` so the model has write access.
 
 ```yaml
 prompt-under-eval: ./prompts/update-checklist.md
@@ -75,8 +75,9 @@ test_input:
   codebase_context: "src/app/api/health/route.ts — GET /api/health implemented"
 
 model_for_eval: claude-sonnet-5-5
-model_parameters:
-  max_tokens: 2048
+runner: agentic
+agent_options:
+  max_turns: 10
 
 setup:
   before: scripts/reset_checklist.sh   # restore the file to its unchecked state
@@ -150,6 +151,7 @@ coe test prompt-1-eval.yml
 
 - Use relative paths for prompts: `../prompts/my-prompt.md`
 - Store prompts in markdown files for readability
-- Use meaningful check names - they appear in results
-- Run 20-30 times for statistical validity
-- Check the HTML dashboard to spot patterns in failures
+- Use meaningful check names — they appear in results and the dashboard
+- Run 20 times (the default) for statistical validity — the dashboard pass rate is calculated over the last 20 runs
+- Use `runner: agentic` with `file_contains` checks when the model needs to write files
+- Agentic tool activity (tool calls and text) is captured in the `logs` field of each result JSON and rendered in the dashboard's expanded row view
