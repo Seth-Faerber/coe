@@ -109,10 +109,13 @@ def _execute_tool(name: str, input_dict: dict, cwd: Path) -> str:
         return f"Error: {e}"
 
 
-def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: Anthropic, log_collector: list = None) -> tuple[str, bool]:
+_MAX_TOOL_RESULT_CHARS = 20_000  # ~5k tokens; prevents a single large file from blowing up context
+
+def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: Anthropic, log_collector: list = None, model_params: dict = None) -> tuple[str, bool]:
     allowed = options.get("allowed_tools", list(_AVAILABLE_TOOLS.keys()))
     tools = [_AVAILABLE_TOOLS[t] for t in allowed if t in _AVAILABLE_TOOLS]
     max_turns = options.get("max_turns", 10)
+    max_tokens = (model_params or {}).get("max_tokens", 8096)
 
     messages = [{"role": "user", "content": prompt}]
     final_text = ""
@@ -120,7 +123,7 @@ def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: A
     for _ in range(max_turns):
         response = client.messages.create(
             model=model,
-            max_tokens=8096,
+            max_tokens=max_tokens,
             tools=tools,
             messages=messages,
         )
@@ -149,6 +152,8 @@ def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: A
             for block in response.content:
                 if block.type == "tool_use":
                     result = _execute_tool(block.name, block.input, cwd)
+                    if len(result) > _MAX_TOOL_RESULT_CHARS:
+                        result = result[:_MAX_TOOL_RESULT_CHARS] + f"\n... [truncated — {len(result)} chars total]"
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -228,6 +233,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
                 config['_repo_root'],
                 eval_client,
                 log_collector=log_collector,
+                model_params=model_params,
             )
         else:
             messages = [{"role": "user", "content": content}]

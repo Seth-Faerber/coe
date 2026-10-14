@@ -125,7 +125,7 @@ Controls how the prompt is executed. Optional; defaults to `api`.
 | Value | Behavior |
 |---|---|
 | `api` | Calls the Anthropic API directly. Fast; the model has no tool access. |
-| `agentic` | Runs an SDK agentic loop. The model can call `read_file`, `write_file`, and `list_directory` tools across multiple turns. Use this for evals that require file manipulation. |
+| `agentic` | Runs an SDK agentic loop. The model can call `read_file`, `write_file`, `list_directory`, and `run_command` tools across multiple turns. Use this for evals that require file manipulation or shell commands. |
 
 ```yaml
 runner: agentic
@@ -138,9 +138,40 @@ Options for the `agentic` runner. Ignored when `runner: api`.
 ```yaml
 agent_options:
   max_turns: 15               # limit agentic turns (default: 10)
-  allowed_tools:              # restrict which tools are available (default: all three)
+  allowed_tools:              # restrict which tools are available (default: all four)
     - read_file
+    - write_file
     - list_directory
+    - run_command
+```
+
+#### Available tools
+
+| Tool | Description |
+|---|---|
+| `read_file` | Read a file relative to the repo root |
+| `write_file` | Write or create a file relative to the repo root |
+| `list_directory` | List entries in a directory relative to the repo root |
+| `run_command` | Run any shell command in the repo root and return stdout, stderr, and exit code (30 s timeout) |
+
+Use `run_command` when the model needs to interact with CLI tools as part of the task. For example, to evaluate a prompt that reads and updates beads issues:
+
+```yaml
+runner: agentic
+agent_options:
+  allowed_tools:
+    - run_command
+  max_turns: 5
+
+prompt-under-eval: |
+  List all open beads issues with `bd list --status=open`, then summarize them.
+  Your response must include each issue ID and title.
+
+deterministic_checks:
+  - name: Contains a beads ID
+    type: contains
+    values:
+      - "beads-"
 ```
 
 ### model_parameters
@@ -246,7 +277,7 @@ Each run produces a timestamped JSON file:
   "passed": true,
   "duration_seconds": 1.23,
   "timestamp": "2026-10-13T15:30:45.123456",
-  "logs": ["→ list_directory: src/", "✎ Here is what I found..."]
+  "logs": ["→ run_command: bd list --status=open", "→ list_directory: src/", "✎ Here is what I found..."]
 }
 ```
 
