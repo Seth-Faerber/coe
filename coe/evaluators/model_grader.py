@@ -60,7 +60,6 @@ RUBRIC:
             model=model,
             max_tokens=1500,
             tools=[_EVAL_TOOL],
-            tool_choice={"type": "any"},
             messages=[{"role": "user", "content": prompt}]
         )
 
