@@ -24,7 +24,8 @@ def read_all_results(tests_coe_dir: Path, prompt_name: str = None) -> Dict[str, 
             'pass_rate': 0,
             'total_runs': 0,
             'passed': 0,
-            'failed': 0
+            'failed': 0,
+            'errors': 0,
         }
 
     results = []
@@ -41,12 +42,15 @@ def read_all_results(tests_coe_dir: Path, prompt_name: str = None) -> Dict[str, 
 
     changelog = load_changelog(tests_coe_dir) if prompt_name else []
 
-    recent = results[-20:]
-    recent_passed = sum(1 for r in recent if r.get('passed', False))
+    non_error = [r for r in results if not r.get('error')]
+    error_count = len(results) - len(non_error)
+
+    recent = non_error[-20:]
+    recent_passed = sum(1 for r in recent if r.get('passed'))
     recent_runs = len(recent)
     pass_rate = (recent_passed / recent_runs * 100) if recent_runs else 0
 
-    passed_count = sum(1 for r in results if r.get('passed', False))
+    passed_count = sum(1 for r in non_error if r.get('passed'))
 
     annotated_results = _annotate_with_changes(results, changelog)
 
@@ -57,7 +61,8 @@ def read_all_results(tests_coe_dir: Path, prompt_name: str = None) -> Dict[str, 
         'pass_rate': pass_rate,
         'total_runs': len(results),
         'passed': passed_count,
-        'failed': len(results) - passed_count,
+        'failed': len(non_error) - passed_count,
+        'errors': error_count,
         'recent_passed': recent_passed,
         'recent_runs': recent_runs,
     }

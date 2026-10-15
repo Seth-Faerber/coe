@@ -21,6 +21,7 @@ def generate_full_dashboard(tests_coe_dir: Path) -> None:
             'total_runs': p['total_runs'],
             'passed': p['passed'],
             'failed': p['failed'],
+            'errors': p.get('errors', 0),
             'recent_passed': p['recent_passed'],
             'recent_runs': p['recent_runs'],
         }
@@ -36,6 +37,7 @@ def generate_full_dashboard(tests_coe_dir: Path) -> None:
             'total_runs': p['total_runs'],
             'passed': p['passed'],
             'failed': p['failed'],
+            'errors': p.get('errors', 0),
             'recent_runs': p['recent_runs'],
         }
         for p in all_prompt_data

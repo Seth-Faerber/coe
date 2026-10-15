@@ -105,10 +105,14 @@ function renderPromptTimeline(promptData, index) {
 
     const statsEl = document.createElement('div');
     statsEl.className = 'prompt-stats';
+    const errorStat = (promptData.errors > 0)
+        ? `<div class="stat-item"><span class="stat-label">Errors</span><span class="stat-value error">${promptData.errors}</span></div>`
+        : '';
     statsEl.innerHTML = `
         <div class="stat-item"><span class="stat-label">Total Runs</span><span class="stat-value">${promptData.total_runs}</span></div>
         <div class="stat-item"><span class="stat-label">Passed</span><span class="stat-value pass">${promptData.passed}</span></div>
         <div class="stat-item"><span class="stat-label">Failed</span><span class="stat-value fail">${promptData.failed}</span></div>
+        ${errorStat}
         <div class="stat-item"><span class="stat-label">Pass Rate (last 20)</span><span class="stat-value">${escapeHtml(promptData.pass_rate)}</span></div>
     `;
     panel.appendChild(statsEl);
@@ -145,9 +149,11 @@ function renderPromptTimeline(promptData, index) {
 }
 
 function createTimelineRow(result, index, promptData, promptIndex) {
+    const isError = result.error;
     const passed = result.passed;
+    const rowState = isError ? 'error' : (passed ? 'pass' : 'fail');
     const row = document.createElement('div');
-    row.className = 'timeline-row ' + (passed ? 'pass' : 'fail');
+    row.className = 'timeline-row ' + rowState;
     row.dataset.index = index;
 
     if (result.change_marker) {
@@ -162,12 +168,13 @@ function createTimelineRow(result, index, promptData, promptIndex) {
         durationMs = m > 0 ? `${m}m ${s}s` : `${s}s`;
     }
     const turnsLabel = result.num_turns != null ? `${result.num_turns}t` : '';
+    const statusLabel = isError ? 'ERROR' : (passed ? 'PASS' : 'FAIL');
 
     const header = document.createElement('div');
     header.className = 'row-header';
     header.innerHTML = `
         <span class="row-timestamp">${formatTimestamp(result.timestamp)}</span>
-        <span class="row-status ${passed ? 'pass' : 'fail'}">${passed ? 'PASS' : 'FAIL'}</span>
+        <span class="row-status ${rowState}">${statusLabel}</span>
         <span class="row-timing">${durationMs}</span>
         ${turnsLabel ? `<span class="row-turns">${turnsLabel}</span>` : ''}
     `;
@@ -251,10 +258,17 @@ function createTimelineRow(result, index, promptData, promptIndex) {
         const me = result.model_evaluation;
         const meSection = document.createElement('div');
         meSection.className = 'detail-section';
-        meSection.innerHTML = `
-            <div class="detail-title">Model Evaluation (${escapeHtml(me.model || '')})</div>
-            <div class="detail-content">Score: ${me.score}/5 · ${me.pass ? 'PASS' : 'FAIL'}\n\n${escapeHtml(me.reasoning || '')}</div>
-        `;
+        if (me.error) {
+            meSection.innerHTML = `
+                <div class="detail-title">Model Evaluation Error</div>
+                <div class="detail-content">${escapeHtml(me.error_detail || 'Unknown error')}</div>
+            `;
+        } else {
+            meSection.innerHTML = `
+                <div class="detail-title">Model Evaluation (${escapeHtml(me.model || '')})</div>
+                <div class="detail-content">Score: ${me.score}/5 · ${me.pass ? 'PASS' : 'FAIL'}\n\n${escapeHtml(me.reasoning || '')}</div>
+            `;
+        }
         details.appendChild(meSection);
     }
 

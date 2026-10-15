@@ -19,6 +19,7 @@ from coe.dashboard.generator import generate_full_dashboard
 
 _GREEN = "\033[92m"
 _RED = "\033[91m"
+_YELLOW = "\033[93m"
 _RESET = "\033[0m"
 
 def _run_script(path: Path, cwd: Path) -> None:
@@ -214,6 +215,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
 
     passed_count = 0
     failed_count = 0
+    error_count = 0
 
     print(f"Running {num_runs} evals for '{prompt_name}'...")
     print(f"  Prompt source: {prompt_source}")
@@ -275,14 +277,18 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
                 file_content=file_content,
             )
 
-        overall_passed = det_passed
-        if model_eval_results:
-            overall_passed = overall_passed and (model_eval_results['score'] >= 4)
-
-        if overall_passed:
-            passed_count += 1
+        overall_error = bool(model_eval_results and model_eval_results.get('error'))
+        if overall_error:
+            overall_passed = None
+            error_count += 1
         else:
-            failed_count += 1
+            overall_passed = det_passed
+            if model_eval_results:
+                overall_passed = overall_passed and (model_eval_results['score'] >= 4)
+            if overall_passed:
+                passed_count += 1
+            else:
+                failed_count += 1
 
         result = {
             'test_input': test_input,
@@ -290,6 +296,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
             'deterministic_checks': det_results,
             'model_evaluation': model_eval_results,
             'passed': overall_passed,
+            'error': overall_error,
             'duration_seconds': duration,
             'timestamp': datetime.now().isoformat(),
             'num_turns': num_turns,
@@ -301,10 +308,18 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
         if config.get('_setup_after'):
             _run_script(config['_setup_after'], config['_repo_root'])
 
-        status = f"{_GREEN}✓ PASS{_RESET}" if overall_passed else f"{_RED}✗ FAIL{_RESET}"
+        if overall_error:
+            status = f"{_YELLOW}⚠ ERROR{_RESET}"
+        elif overall_passed:
+            status = f"{_GREEN}✓ PASS{_RESET}"
+        else:
+            status = f"{_RED}✗ FAIL{_RESET}"
         print(f"  [{i}/{num_runs}] {status}")
 
-    print(f"\nResults: {passed_count}/{num_runs} passed ({100*passed_count//num_runs}%)")
+    non_error = num_runs - error_count
+    pct = (100 * passed_count // non_error) if non_error else 0
+    error_suffix = f" · {error_count} error{'s' if error_count != 1 else ''}" if error_count else ""
+    print(f"\nResults: {passed_count}/{non_error} passed ({pct}%){error_suffix}")
     generate_full_dashboard(tests_coe_dir)
 
 def cmd_dashboard(args):
