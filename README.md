@@ -290,6 +290,23 @@ Each run produces a timestamped JSON file:
 
 The dashboard pass rate displayed on prompt cards, per-prompt stats, and the overview header is calculated over the **20 most recent runs** for each prompt, not the full history. All-time run counts are still shown for context.
 
+## Long Runs
+
+On macOS, the system may sleep during a long batch run, interrupting it. Wrap the command with `caffeinate` to prevent idle sleep for the duration:
+
+```bash
+caffeinate -i coe test my-eval.yml -r 50
+```
+
+To keep a run alive across terminal disconnects or closing the lid, use tmux:
+
+```bash
+tmux new -s evals
+caffeinate -i coe test my-eval.yml -r 50
+# detach without stopping: Ctrl-B D
+# reattach later:          tmux attach -t evals
+```
+
 ## Example
 
 See `example/sample-eval.yml` for a complete example with both runner types shown.

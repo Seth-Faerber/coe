@@ -23,7 +23,7 @@ _YELLOW = "\033[93m"
 _RESET = "\033[0m"
 
 def _run_script(path: Path, cwd: Path) -> None:
-    result = subprocess.run(["bash", str(path)], cwd=str(cwd))
+    result = subprocess.run(["bash", str(path)], cwd=str(cwd), stdin=subprocess.DEVNULL)
     if result.returncode != 0:
         print(f"  Script failed (exit {result.returncode}): {path.name}. Aborting.")
         sys.exit(1)
@@ -102,7 +102,8 @@ def _execute_tool(name: str, input_dict: dict, cwd: Path) -> str:
             return "ok"
         if name == "run_command":
             result = subprocess.run(
-                input_dict["command"], shell=True, capture_output=True, text=True, cwd=str(cwd), timeout=30
+                input_dict["command"], shell=True, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL, cwd=str(cwd), timeout=30
             )
             return f"exit_code: {result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         return f"Unknown tool: {name}"
