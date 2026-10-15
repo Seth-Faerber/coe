@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from anthropic import Anthropic
 
 def _extract_text_from_response(response) -> str:
@@ -16,6 +16,7 @@ def run_model_evaluation(
     test_input: Dict[str, Any],
     model_eval_config: Dict[str, Any],
     grader_model: str,
+    file_content: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not model_eval_config.get('enabled'):
         return None
@@ -30,6 +31,12 @@ def run_model_evaluation(
     # Format test input for context
     test_input_str = "\n".join(f"{k}: {v}" for k, v in test_input.items()) if isinstance(test_input, dict) else str(test_input)
 
+    output_section = (
+        f"GRADED FILE CONTENT (final state after agent run):\n{file_content}"
+        if file_content is not None
+        else f"OUTPUT:\n{output}"
+    )
+
     prompt = f"""Please evaluate the following output based on the provided rubric and context.
 
 ORIGINAL PROMPT:
@@ -38,8 +45,7 @@ ORIGINAL PROMPT:
 TEST INPUT:
 {test_input_str}
 
-OUTPUT:
-{output}
+{output_section}
 
 RUBRIC:
 {rubric}

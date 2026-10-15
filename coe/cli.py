@@ -119,8 +119,10 @@ def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: A
 
     messages = [{"role": "user", "content": prompt}]
     final_text = ""
+    turn_count = 0
 
     for _ in range(max_turns):
+        turn_count += 1
         response = client.messages.create(
             model=model,
             max_tokens=max_tokens,
@@ -164,7 +166,10 @@ def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: A
         else:
             break
 
-    return final_text, False
+    if log_collector is not None:
+        log_collector.append(f"ℹ {turn_count} turn(s)")
+
+    return final_text, False, turn_count
 
 def _find_tests_coe_dir() -> Path:
     """Find tests/coe directory starting from current directory going up."""
@@ -225,8 +230,9 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
 
         eval_client = Anthropic(api_key=api_key, base_url=base_url)
         log_collector = []
+        num_turns = None
         if runner == 'agentic':
-            output, _ = _run_with_tools(
+            output, _, num_turns = _run_with_tools(
                 content,
                 model,
                 config.get('_agent_options', {}),
@@ -252,13 +258,21 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
 
         model_eval_results = None
         if config.get('model_evaluation', {}).get('enabled'):
-            grader_model = config['model_evaluation'].get('model', model)
+            model_eval_config = config['model_evaluation']
+            grader_model = model_eval_config.get('model', model)
+            file_content = None
+            graded_file = model_eval_config.get('graded_file')
+            if graded_file and config.get('_repo_root'):
+                graded_path = Path(config['_repo_root']) / graded_file
+                if graded_path.exists():
+                    file_content = graded_path.read_text()
             model_eval_results = run_model_evaluation(
                 output,
                 prompt_text,
                 test_input,
-                config['model_evaluation'],
+                model_eval_config,
                 grader_model,
+                file_content=file_content,
             )
 
         overall_passed = det_passed
@@ -278,6 +292,7 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
             'passed': overall_passed,
             'duration_seconds': duration,
             'timestamp': datetime.now().isoformat(),
+            'num_turns': num_turns,
             'logs': log_collector,
         }
 

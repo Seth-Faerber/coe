@@ -144,7 +144,6 @@
             background: white;
             border-left: 4px solid #ddd;
             padding: 12px 16px;
-            cursor: pointer;
             transition: box-shadow 0.1s;
             position: relative;
         }
@@ -178,6 +177,7 @@
             align-items: center;
             gap: 12px;
             flex-wrap: wrap;
+            cursor: pointer;
         }
 
         .row-timestamp { font-size: 12px; color: #94a3b8; font-family: monospace; }
@@ -194,6 +194,19 @@
         .row-status.fail { background: #fee2e2; color: #991b1b; }
 
         .row-timing { font-size: 12px; color: #cbd5e1; }
+
+        .row-turns { font-size: 12px; color: #94a3b8; }
+
+        .recent-separator {
+            text-align: center;
+            font-size: 11px;
+            color: #94a3b8;
+            padding: 8px 0;
+            border-top: 1px dashed #e2e8f0;
+            border-bottom: 1px dashed #e2e8f0;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
 
         .change-indicator {
             background: #fef3c7;
@@ -223,6 +236,28 @@
             letter-spacing: 0.5px;
             color: #64748b;
             margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .copy-btn {
+            font-size: 10px;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: 0;
+            color: #94a3b8;
+            background: none;
+            border: 1px solid #e2e8f0;
+            border-radius: 3px;
+            padding: 1px 6px;
+            cursor: pointer;
+            line-height: 1.4;
+        }
+
+        .copy-btn:hover {
+            color: #475569;
+            border-color: #94a3b8;
         }
 
         .detail-content {

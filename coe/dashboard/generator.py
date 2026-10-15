@@ -36,6 +36,7 @@ def generate_full_dashboard(tests_coe_dir: Path) -> None:
             'total_runs': p['total_runs'],
             'passed': p['passed'],
             'failed': p['failed'],
+            'recent_runs': p['recent_runs'],
         }
         for p in all_prompt_data
     ]

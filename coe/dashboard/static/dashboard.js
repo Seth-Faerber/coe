@@ -132,6 +132,12 @@ function renderPromptTimeline(promptData, index) {
         promptData.results.forEach((result, rowIndex) => {
             const row = createTimelineRow(result, rowIndex, promptData, index);
             timeline.appendChild(row);
+            if (rowIndex === promptData.recent_runs - 1 && promptData.total_runs > promptData.recent_runs) {
+                const sep = document.createElement('div');
+                sep.className = 'recent-separator';
+                sep.textContent = 'Runs below are not included in the pass rate';
+                timeline.appendChild(sep);
+            }
         });
     }
 
@@ -148,9 +154,14 @@ function createTimelineRow(result, index, promptData, promptIndex) {
         row.classList.add('has-change');
     }
 
-    const durationMs = result.duration_seconds != null
-        ? `${(result.duration_seconds * 1000).toFixed(0)}ms`
-        : '';
+    let durationMs = '';
+    if (result.duration_seconds != null) {
+        const totalSec = Math.round(result.duration_seconds);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        durationMs = m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+    const turnsLabel = result.num_turns != null ? `${result.num_turns}t` : '';
 
     const header = document.createElement('div');
     header.className = 'row-header';
@@ -158,6 +169,7 @@ function createTimelineRow(result, index, promptData, promptIndex) {
         <span class="row-timestamp">${formatTimestamp(result.timestamp)}</span>
         <span class="row-status ${passed ? 'pass' : 'fail'}">${passed ? 'PASS' : 'FAIL'}</span>
         <span class="row-timing">${durationMs}</span>
+        ${turnsLabel ? `<span class="row-turns">${turnsLabel}</span>` : ''}
     `;
 
     const content = document.createElement('div');
@@ -172,6 +184,29 @@ function createTimelineRow(result, index, promptData, promptIndex) {
 
     const details = document.createElement('div');
     details.className = 'row-details';
+
+    if (result.result_file) {
+        const fileSection = document.createElement('div');
+        fileSection.className = 'detail-section';
+        const fileTitleEl = document.createElement('div');
+        fileTitleEl.className = 'detail-title';
+        fileTitleEl.textContent = 'Result File';
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-btn';
+        copyBtn.textContent = 'Copy';
+        copyBtn.title = 'Copy filename';
+        copyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(result.result_file);
+        });
+        fileTitleEl.appendChild(copyBtn);
+        const fileContentEl = document.createElement('div');
+        fileContentEl.className = 'detail-content';
+        fileContentEl.textContent = result.result_file;
+        fileSection.appendChild(fileTitleEl);
+        fileSection.appendChild(fileContentEl);
+        details.appendChild(fileSection);
+    }
 
     if (result.test_input) {
         details.appendChild(makeDetailSection('Test Input',
@@ -233,7 +268,9 @@ function createTimelineRow(result, index, promptData, promptIndex) {
     row.addEventListener('click', (e) => {
         if (e.shiftKey) {
             handleShiftClick(index, promptData, promptIndex);
-        } else {
+            return;
+        }
+        if (e.target.closest('.row-header')) {
             row.classList.toggle('expanded');
         }
     });
@@ -289,7 +326,7 @@ function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
     return date.toLocaleString('en-US', {
         year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
     });
 }
 
