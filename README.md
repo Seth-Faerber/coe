@@ -94,10 +94,13 @@ coe test my-prompt-eval.yml -r 50
 ### 5. View the Dashboard
 
 ```bash
-coe dashboard
+coe dashboard          # open the existing dashboard
+coe dash build         # rebuild from existing result files, then open
+coe dash --build       # same
+coe dash -b            # same
 ```
 
-Opens `tests/coe/results/index.html` in your default browser.
+Opens `tests/coe/results/index.html` in your default browser. Use `build` when a run was interrupted before the dashboard regenerated — it reads the existing result JSON files and rewrites `index.html` without running any evals.
 
 ## Configuration
 

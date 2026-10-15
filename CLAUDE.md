@@ -60,18 +60,82 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+pip install -e .          # install in editable mode
+coe test                  # run all evals in tests/coe/
+coe test my-eval.yml      # run a single eval
+coe test my-eval.yml -r 5 # run 5 times (default: 20)
+coe dash                  # open the results dashboard
+coe dash build            # rebuild dashboard from existing results, then open
 ```
+
+No test framework is configured. The `coe test` command is the primary way to exercise the evaluator logic.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+`coe` is a Python CLI evaluation framework for testing and grading AI prompts against a repo. It runs prompts (inline or from files) through the Anthropic API and scores them with deterministic checks and optional model-graded rubrics.
+
+**Package layout:**
+
+```
+coe/
+  cli.py                      # entry point; argparse commands; agentic tool loop
+  config/
+    yaml_loader.py             # loads and validates eval YAML files
+  evaluators/
+    deterministic.py           # runs contains/file_contains/does_not_contain checks
+    model_grader.py            # runs model-graded rubric scoring
+  storage/
+    results_writer.py          # writes timestamped JSON to tests/coe/results/
+    history_reader.py          # reads all results for dashboard aggregation
+    changelog_manager.py       # manages tests/coe/results/changelog.json
+  dashboard/
+    generator.py               # renders Jinja2 template → tests/coe/results/index.html
+    templates/prompt_timeline.html
+    static/dashboard.js
+```
+
+**Eval discovery:** `coe` walks up from CWD to find `tests/coe/`, then globs `*.yml`. Results land in `tests/coe/results/`.
+
+**Agentic runner:** when `runner: agentic` is set, the eval runs an SDK tool loop giving the model `read_file`, `write_file`, `list_directory`, and `run_command`. The loop uses `_repo_root` (the nearest `.git` ancestor of the eval file) as CWD for all tool calls.
+
+## Environment Variables
+
+Stored in `.env` at the repo root (loaded by `coe test` via python-dotenv):
+
+| Variable | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | one of these two | Anthropic API key |
+| `ANTHROPIC_AUTH_TOKEN` | one of these two | Alternative auth token |
+| `ANTHROPIC_BASE_URL` | no | Custom API endpoint (e.g. Azure Gov) |
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+**Eval file format** (`tests/coe/*.yml`):
+
+```yaml
+prompt-under-eval: "inline text" or "path/to/file.md"  # required; ~ is expanded
+model_for_eval: claude-haiku-4-5-20251001               # required
+deterministic_checks:                                   # required
+  - name: "check name"
+    type: contains | does_not_contain | file_contains | file_does_not_contain
+    values: ["string to match"]
+    file: relative/path.md   # required for file_contains / file_does_not_contain
+
+runner: agentic               # optional; default: api
+agent_options:
+  max_turns: 15
+  allowed_tools: [read_file, write_file, list_directory, run_command]
+model_parameters:
+  max_tokens: 8096
+model_evaluation:
+  enabled: true
+  model: claude-sonnet-5-5
+  rubric: |
+    ...scoring rubric...
+setup:
+  before: reset_eval.sh       # runs before each eval run
+  after: reset_eval.sh        # runs after each result is written
+```
+
+**Result files:** each run writes `tests/coe/results/<ISO-timestamp>.json` containing output, deterministic check results, model eval score, pass/fail, duration, and turn count.

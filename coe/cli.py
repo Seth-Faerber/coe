@@ -323,8 +323,12 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
     generate_full_dashboard(tests_coe_dir)
 
 def cmd_dashboard(args):
-    """Handle 'coe dashboard' command — open index.html in the default browser."""
+    """Handle 'coe dashboard' command — optionally rebuild, then open index.html."""
     tests_coe_dir = _find_tests_coe_dir()
+    should_build = getattr(args, 'action', None) == 'build' or getattr(args, 'build_flag', False)
+    if should_build:
+        generate_full_dashboard(tests_coe_dir)
+        print("Dashboard rebuilt.")
     index_path = (tests_coe_dir / 'results' / 'index.html').resolve()
     if not index_path.exists():
         print("No dashboard found. Run 'coe test' first to generate results.")
@@ -372,6 +376,7 @@ examples:
   coe test my-eval.yml            run a single eval
   coe test my-eval.yml -r 5      run 5 times instead of the default 20
   coe dashboard                   open the results dashboard (also: coe dash, coe d)
+  coe dash build                  rebuild dashboard from existing results, then open (also: --build, -b)
 
 prompt tips:
   In your YAML eval file, prompt-under-eval can be an inline string or a
@@ -410,6 +415,18 @@ agent_options:
         'dashboard',
         aliases=['dash', 'd'],
         help='Open the results dashboard in the default browser',
+    )
+    dashboard_parser.add_argument(
+        'action',
+        nargs='?',
+        choices=['build'],
+        help="'build' to regenerate the dashboard from existing result files, then open it",
+    )
+    dashboard_parser.add_argument(
+        '--build', '-b',
+        dest='build_flag',
+        action='store_true',
+        help='Regenerate the dashboard from existing result files, then open it',
     )
     dashboard_parser.set_defaults(func=cmd_dashboard)
 
