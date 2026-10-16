@@ -9,12 +9,10 @@ from typing import List
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from coe.config.yaml_loader import load_eval_config
+from coe.config.yaml_loader import load_eval_config, load_project_config, load_runtime_eval_config
 from coe.evaluators.deterministic import run_deterministic_checks
 from coe.evaluators.model_grader import run_model_evaluation
 from coe.storage.results_writer import write_result
-from coe.storage.changelog_manager import add_change_log_entry
-from coe.storage.history_reader import read_all_results
 from coe.dashboard.generator import generate_full_dashboard
 
 _GREEN = "\033[92m"
@@ -173,15 +171,49 @@ def _run_with_tools(prompt: str, model: str, options: dict, cwd: Path, client: A
 
     return final_text, False, turn_count
 
-def _find_tests_coe_dir() -> Path:
-    """Find tests/coe directory starting from current directory going up."""
-    current = Path.cwd()
+def _resolve_eval_dir(dir_override: str = None) -> Path:
+    """Resolve the eval directory from --dir flag, .coe.yml, convention, or fallback."""
+    cwd = Path.cwd()
+
+    if dir_override:
+        p = Path(dir_override).expanduser()
+        if not p.is_absolute():
+            p = cwd / p
+        if not p.exists():
+            raise RuntimeError(f"Specified eval directory not found: {p}")
+        return p
+
+    project_config = load_project_config(cwd)
+    if project_config.get('eval_dir'):
+        rel = Path(project_config['eval_dir']).expanduser()
+        current = cwd
+        while current != current.parent:
+            candidate = current / rel
+            if candidate.exists() and candidate.is_dir():
+                return candidate
+            if (current / '.git').exists():
+                return current / rel  # return even if not yet created
+            current = current.parent
+
+    current = cwd
     while current != current.parent:
-        tests_coe = current / 'tests' / 'coe'
-        if tests_coe.exists() and tests_coe.is_dir():
-            return tests_coe
+        p = current / 'evals' / 'promotion'
+        if p.exists() and p.is_dir():
+            return p
         current = current.parent
-    raise RuntimeError("Could not find tests/coe directory. Are you in the right repository?")
+
+    current = cwd
+    while current != current.parent:
+        p = current / 'tests' / 'coe'
+        if p.exists() and p.is_dir():
+            return p
+        current = current.parent
+
+    raise RuntimeError(
+        "Could not find an eval directory. "
+        "Create evals/promotion/, set eval_dir in .coe.yml, or use --dir."
+    )
+
 
 def _discover_eval_files(tests_coe_dir: Path) -> List[Path]:
     """Discover all .yml files in tests/coe directory."""
@@ -325,47 +357,182 @@ def run_eval(eval_file: Path, num_runs: int = 20, tests_coe_dir: Path = None):
 
 def cmd_dashboard(args):
     """Handle 'coe dashboard' command — optionally rebuild, then open index.html."""
-    tests_coe_dir = _find_tests_coe_dir()
+    eval_dir = _resolve_eval_dir()
     should_build = getattr(args, 'action', None) == 'build' or getattr(args, 'build_flag', False)
     if should_build:
-        generate_full_dashboard(tests_coe_dir)
+        generate_full_dashboard(eval_dir)
         print("Dashboard rebuilt.")
-    index_path = (tests_coe_dir / 'results' / 'index.html').resolve()
+    index_path = (eval_dir / 'results' / 'index.html').resolve()
     if not index_path.exists():
-        print("No dashboard found. Run 'coe test' first to generate results.")
+        print("No dashboard found. Run 'coe promote' first to generate results.")
         sys.exit(1)
     url = index_path.as_uri()
     webbrowser.open(url)
     print(f"Opening {index_path}")
 
-def cmd_test(args):
-    """Handle 'coe test' command."""
-    # Load .env from coe package directory
+def cmd_promote(args):
+    """Handle 'coe promote' command."""
     coe_dir = Path(__file__).parent.parent
     env_file = coe_dir / '.env'
     if env_file.exists():
         load_dotenv(env_file)
 
-    tests_coe_dir = _find_tests_coe_dir()
+    os.environ['COE_MODE'] = 'promotion'
+
+    eval_dir = _resolve_eval_dir(getattr(args, 'dir', None))
 
     if args.eval_file:
-        # Run specific evaluation
-        eval_path = tests_coe_dir / args.eval_file
+        eval_path = eval_dir / args.eval_file
         if not eval_path.exists():
             print(f"Error: Evaluation file not found: {eval_path}")
             sys.exit(1)
-        run_eval(eval_path, args.runs, tests_coe_dir)
+        run_eval(eval_path, args.runs, eval_dir)
     else:
-        # Discover and run all evaluations
-        eval_files = _discover_eval_files(tests_coe_dir)
+        eval_files = _discover_eval_files(eval_dir)
         if not eval_files:
-            print(f"No .yml files found in {tests_coe_dir}")
+            print(f"No .yml files found in {eval_dir}")
             sys.exit(1)
 
         print(f"Found {len(eval_files)} evaluation(s)")
         for eval_file in eval_files:
             print(f"\nRunning {eval_file.name}...")
-            run_eval(eval_file, args.runs, tests_coe_dir)
+            run_eval(eval_file, args.runs, eval_dir)
+
+
+def cmd_test_deprecated(args):
+    """Deprecated alias for 'coe promote'."""
+    print(f"{_YELLOW}Warning: 'coe test' is deprecated. Use 'coe promote' instead.{_RESET}", file=sys.stderr)
+    cmd_promote(args)
+
+
+def _resolve_runtime_eval_dir(project_config: dict) -> Path:
+    rel = Path(project_config.get('runtime_eval_dir', 'evals/runtime'))
+    current = Path.cwd()
+    while current != current.parent:
+        candidate = current / rel
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+        if (current / '.git').exists():
+            return current / rel
+        current = current.parent
+    return Path.cwd() / rel
+
+
+def cmd_runtime_check(args):
+    """Handle 'coe runtime-check' command — grade a skill's output in real time."""
+    import json
+    import hashlib
+    import tempfile
+
+    coe_dir = Path(__file__).parent.parent
+    env_file = coe_dir / '.env'
+    if env_file.exists():
+        load_dotenv(env_file)
+
+    skill_name = getattr(args, 'skill', None)
+
+    if getattr(args, 'from_hook', False):
+        try:
+            hook_data = json.loads(sys.stdin.read())
+            if hook_data.get('tool_name') != 'Skill':
+                sys.exit(0)
+            skill_name = hook_data.get('tool_input', {}).get('skill') or skill_name
+        except Exception:
+            sys.exit(0)
+
+    if not skill_name:
+        print("No skill name. Use --skill SKILL_NAME or --from-hook.", file=sys.stderr)
+        sys.exit(1)
+
+    project_config = load_project_config(Path.cwd())
+    runtime_eval_dir = _resolve_runtime_eval_dir(project_config)
+    config_path = runtime_eval_dir / f"{skill_name}.yml"
+
+    if not config_path.exists():
+        sys.exit(0)
+
+    try:
+        config = load_runtime_eval_config(str(config_path))
+    except Exception as e:
+        print(f"Error loading runtime eval config: {e}", file=sys.stderr)
+        sys.exit(0)
+
+    repo_root = config['_repo_root']
+
+    repo_hash = hashlib.md5(str(repo_root).encode()).hexdigest()[:8]
+    sentinel_path = Path(tempfile.gettempdir()) / f".coe-sentinel-{repo_hash}-{skill_name}"
+
+    retry_count = 0
+    if sentinel_path.exists():
+        try:
+            retry_count = json.loads(sentinel_path.read_text()).get('retries', 0)
+        except Exception:
+            retry_count = 0
+
+    retry_count += 1
+    sentinel_path.write_text(json.dumps({'retries': retry_count, 'skill': skill_name}))
+
+    det_results = run_deterministic_checks('', config['deterministic_checks'], repo_root)
+    det_passed = all(r['overall_pass'] for r in det_results.values())
+
+    model_eval_config = config.get('model_evaluation', {})
+    model_eval_results = None
+    if model_eval_config.get('enabled'):
+        grader_model = model_eval_config.get('model', 'claude-haiku-4-5-20251001')
+        diff = subprocess.run(
+            ['git', 'diff', 'HEAD'], cwd=str(repo_root), capture_output=True, text=True
+        ).stdout
+        model_eval_results = run_model_evaluation(
+            output=diff,
+            prompt_text=f"Runtime evaluation of skill: {skill_name}",
+            test_input={},
+            model_eval_config=model_eval_config,
+            grader_model=grader_model,
+        )
+
+    pass_threshold = model_eval_config.get('pass_threshold', 4)
+    overall_passed = det_passed
+    if model_eval_results and not model_eval_results.get('error'):
+        overall_passed = overall_passed and (model_eval_results['score'] >= pass_threshold)
+
+    if overall_passed:
+        sentinel_path.unlink(missing_ok=True)
+        print(f"  {_GREEN}✓ Runtime eval passed{_RESET} for skill '{skill_name}' (attempt {retry_count})")
+        sys.exit(0)
+
+    lines = [f"Runtime eval FAILED for skill '{skill_name}' (attempt {retry_count}/3)", ""]
+    for check_name, result in det_results.items():
+        marker = "✓" if result['overall_pass'] else "✗"
+        lines.append(f"  {marker} {check_name}")
+        if not result['overall_pass']:
+            if result.get('error'):
+                lines.append(f"      Error: {result['error']}")
+            for c in result['checks']:
+                if not c['passed']:
+                    verb = "missing" if 'contains' in result['type'] else "unexpectedly present"
+                    lines.append(f"      Value {verb}: {c['value']!r}")
+
+    if model_eval_results:
+        score = model_eval_results.get('score')
+        reasoning = model_eval_results.get('reasoning', '')
+        lines.append(f"  Model eval score: {score}/5 (pass threshold: {pass_threshold})")
+        if reasoning:
+            lines.append(f"  Reasoning: {reasoning}")
+
+    lines.append("")
+
+    if retry_count >= 3:
+        sentinel_path.unlink(missing_ok=True)
+        header = "HUMAN ESCALATION REQUIRED: skill has failed 3 consecutive runtime evaluations."
+        lines = [header, "Do not retry automatically. A human must review the output.", ""] + lines
+        lines.append("Session halted after 3 failed attempts.")
+    else:
+        remaining = 3 - retry_count
+        lines.append(f"Please review the issues above and retry the skill. ({remaining} attempt(s) remaining)")
+
+    print("\n".join(lines), file=sys.stderr)
+    sys.exit(2)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -373,11 +540,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  coe test                        run all evals in tests/coe/
-  coe test my-eval.yml            run a single eval
-  coe test my-eval.yml -r 5      run 5 times instead of the default 20
+  coe promote                     run all promotion evals (also: coe p)
+  coe promote my-eval.yml         run a single promotion eval
+  coe promote my-eval.yml -r 5   run 5 times instead of the default 20
+  coe promote --dir evals/promotion/  run evals from a specific directory
   coe dashboard                   open the results dashboard (also: coe dash, coe d)
   coe dash build                  rebuild dashboard from existing results, then open (also: --build, -b)
+
+eval directory resolution (in order):
+  1. --dir PATH flag
+  2. eval_dir key in .coe.yml at the repo root
+  3. evals/promotion/ if it exists
+  4. tests/coe/ (legacy fallback)
 
 prompt tips:
   In your YAML eval file, prompt-under-eval can be an inline string or a
@@ -386,11 +560,7 @@ prompt tips:
     )
     subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-    test_parser = subparsers.add_parser(
-        'test',
-        help='Run evaluations from tests/coe/',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+    _promote_epilog = """
 prompt-under-eval in your YAML can be an inline string or a relative file path.
 If the path resolves to an existing file, coe reads its contents as the prompt.
 
@@ -406,11 +576,48 @@ agent_options:
     - write_file
     - list_directory
     - run_command         # runs shell commands; required for bd/beads and other CLIs
+"""
+
+    promote_parser = subparsers.add_parser(
+        'promote',
+        aliases=['p'],
+        help='Run promotion evaluations',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=_promote_epilog,
+    )
+    promote_parser.add_argument('eval_file', nargs='?', help='YAML filename to run (omit to run all)')
+    promote_parser.add_argument('-r', '--runs', type=int, default=20, help='Number of evaluation runs (default: 20)')
+    promote_parser.add_argument('--dir', dest='dir', metavar='PATH', help='Eval directory (overrides .coe.yml and convention)')
+    promote_parser.set_defaults(func=cmd_promote)
+
+    test_parser = subparsers.add_parser(
+        'test',
+        help='(deprecated) Alias for coe promote',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=_promote_epilog,
+    )
+    test_parser.add_argument('eval_file', nargs='?', help='YAML filename to run (omit to run all)')
+    test_parser.add_argument('-r', '--runs', type=int, default=20, help='Number of evaluation runs (default: 20)')
+    test_parser.add_argument('--dir', dest='dir', metavar='PATH', help='Eval directory (overrides .coe.yml and convention)')
+    test_parser.set_defaults(func=cmd_test_deprecated)
+
+    runtime_parser = subparsers.add_parser(
+        'runtime-check',
+        help='Grade a skill\'s output in real time (used by PostToolUse hook)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Loads evals/runtime/<skill-name>.yml, runs deterministic + model checks, and manages
+a sentinel file to track retries. Exit codes: 0=pass, 2=fail (feedback or escalation).
+
+examples:
+  coe runtime-check --skill update-claude-md
+  coe runtime-check --from-hook          # reads skill name from stdin (PostToolUse JSON)
 """,
     )
-    test_parser.add_argument('eval_file', nargs='?', help='YAML filename in tests/coe/ to run (omit to run all)')
-    test_parser.add_argument('-r', '--runs', type=int, default=20, help='Number of evaluation runs (default: 20)')
-    test_parser.set_defaults(func=cmd_test)
+    runtime_parser.add_argument('--skill', metavar='SKILL_NAME', help='Name of the skill to evaluate')
+    runtime_parser.add_argument('--from-hook', dest='from_hook', action='store_true',
+                                help='Read skill name from PostToolUse stdin JSON')
+    runtime_parser.set_defaults(func=cmd_runtime_check)
 
     dashboard_parser = subparsers.add_parser(
         'dashboard',

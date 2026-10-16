@@ -1,0 +1,10 @@
+# coe project configuration
+# Place this file at your repo root. coe walks up from CWD to find it.
+
+# Directory containing promotion eval YAML files (relative to repo root).
+# Defaults: looks for evals/promotion/, then falls back to tests/coe/
+eval_dir: evals/promotion
+
+# Directory containing runtime eval YAML files (relative to repo root).
+# Used by: coe runtime-check
+runtime_eval_dir: evals/runtime

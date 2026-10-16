@@ -61,15 +61,16 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 ## Build & Test
 
 ```bash
-pip install -e .          # install in editable mode
-coe test                  # run all evals in tests/coe/
-coe test my-eval.yml      # run a single eval
-coe test my-eval.yml -r 5 # run 5 times (default: 20)
-coe dash                  # open the results dashboard
-coe dash build            # rebuild dashboard from existing results, then open
+pip install -e .               # install in editable mode
+coe promote                    # run all promotion evals (also: coe p)
+coe promote my-eval.yml        # run a single eval
+coe promote my-eval.yml -r 5  # run 5 times (default: 20)
+coe dash                       # open the results dashboard
+coe dash build                 # rebuild dashboard from existing results, then open
+coe runtime-check --skill <name>  # manually run runtime eval for a skill
 ```
 
-No test framework is configured. The `coe test` command is the primary way to exercise the evaluator logic.
+No test framework is configured. `coe promote` is the primary way to exercise the evaluator logic. `coe test` still works as a deprecated alias.
 
 ## Architecture Overview
 
@@ -83,25 +84,25 @@ coe/
   config/
     yaml_loader.py             # loads and validates eval YAML files
   evaluators/
-    deterministic.py           # runs contains/file_contains/does_not_contain checks
+    deterministic.py           # runs contains/file_contains/git_diff_contains checks
     model_grader.py            # runs model-graded rubric scoring
   storage/
-    results_writer.py          # writes timestamped JSON to tests/coe/results/
+    results_writer.py          # writes timestamped JSON to <eval_dir>/results/
     history_reader.py          # reads all results for dashboard aggregation
-    changelog_manager.py       # manages tests/coe/results/changelog.json
+    changelog_manager.py       # manages <eval_dir>/results/changelog.json
   dashboard/
-    generator.py               # renders Jinja2 template → tests/coe/results/index.html
+    generator.py               # renders Jinja2 template → <eval_dir>/results/index.html
     templates/prompt_timeline.html
     static/dashboard.js
 ```
 
-**Eval discovery:** `coe` walks up from CWD to find `tests/coe/`, then globs `*.yml`. Results land in `tests/coe/results/`.
+**Eval discovery:** `coe promote` resolves the eval directory via (1) `--dir` flag, (2) `eval_dir` in `.coe.yml`, (3) `evals/promotion/` if it exists, (4) `tests/coe/` fallback. Results land in `<eval_dir>/results/`. Runtime eval configs live at `<runtime_eval_dir>/<skill-name>.yml`.
 
 **Agentic runner:** when `runner: agentic` is set, the eval runs an SDK tool loop giving the model `read_file`, `write_file`, `list_directory`, and `run_command`. The loop uses `_repo_root` (the nearest `.git` ancestor of the eval file) as CWD for all tool calls.
 
 ## Environment Variables
 
-Stored in `.env` at the repo root (loaded by `coe test` via python-dotenv):
+Stored in `.env` at the repo root (loaded by `coe promote` via python-dotenv):
 
 | Variable | Required | Description |
 |---|---|---|
@@ -111,14 +112,14 @@ Stored in `.env` at the repo root (loaded by `coe test` via python-dotenv):
 
 ## Conventions & Patterns
 
-**Eval file format** (`tests/coe/*.yml`):
+**Promotion eval file format** (`evals/promotion/*.yml`):
 
 ```yaml
 prompt-under-eval: "inline text" or "path/to/file.md"  # required; ~ is expanded
 model_for_eval: claude-haiku-4-5-20251001               # required
 deterministic_checks:                                   # required
   - name: "check name"
-    type: contains | does_not_contain | file_contains | file_does_not_contain
+    type: contains | does_not_contain | file_contains | file_does_not_contain | git_diff_contains | git_diff_does_not_contain
     values: ["string to match"]
     file: relative/path.md   # required for file_contains / file_does_not_contain
 

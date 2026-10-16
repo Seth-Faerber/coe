@@ -7,11 +7,22 @@ A lightweight CLI tool for testing and grading AI prompts using deterministic ch
 - **Easy Configuration**: Define evaluations in simple YAML files
 - **Flexible Prompts**: Support inline prompts or file-based prompts
 - **Two Runners**: Direct Anthropic API calls (`api`), or an agentic SDK loop with tool access (`agentic`)
-- **Deterministic Checks**: Validate outputs and file changes with string matching rules
+- **Deterministic Checks**: Validate outputs, file contents, and git diffs with string matching rules
 - **Model Evaluation**: Use Claude to grade outputs against custom rubrics
 - **Results Tracking**: Track evaluation history with automatic dashboards
 - **Activity Logs**: Agentic tool calls and text snippets are captured per run in the JSON output
 - **Per-Repository Isolation**: Each repo maintains its own evaluation results
+- **Runtime Evaluation**: Grade a skill's output in real time via Claude Code hooks, with automatic retry and human escalation
+
+## Promotion vs Runtime Evaluation
+
+`coe` supports two distinct testing strategies:
+
+**Promotion Evaluation** (`coe promote`) is for refining and certifying prompts before production. It runs a prompt N times against fixed fixtures and measures pass rate. Use it to reach a confidence threshold (e.g., 95% pass rate) before promoting a prompt. Eval configs live in `evals/promotion/` and include detailed `setup` scripts, multiple runs, and targeted deterministic checks.
+
+**Runtime Evaluation** (`coe runtime-check`) is for real-time quality gates in production workflows. It fires once after a Claude Code skill completes (via the `PostToolUse` hook), grades the actual output against the live repo state, and either lets the chain continue or sends feedback back to the agent for a retry. After 3 consecutive failures it escalates to a human. Runtime eval configs live in `evals/runtime/` and include `git_diff_contains` checks and a model rubric with a `pass_threshold`.
+
+The two strategies are isolated: `coe promote` sets `COE_MODE=promotion` so the runtime hook skips during promotion runs.
 
 ## Installation
 
@@ -25,11 +36,19 @@ pip install -e .
 
 ### 1. Set Up Your Repository
 
-In your repository root, create a tests/coe directory:
+In your repository root, create the eval directories and a `.coe.yml` config:
 
 ```bash
-mkdir -p tests/coe
+mkdir -p evals/promotion evals/runtime
 ```
+
+```yaml
+# .coe.yml at your repo root
+eval_dir: evals/promotion
+runtime_eval_dir: evals/runtime
+```
+
+See `example/.coe.yml` for a fully annotated example. `coe` also accepts a legacy `tests/coe/` directory if `.coe.yml` is absent.
 
 ### 2. Create a .env File (in coe repo)
 
@@ -43,7 +62,7 @@ cp .env.example .env
 
 ### 3. Create an Evaluation Config
 
-Create `tests/coe/my-prompt-eval.yml`:
+Create `evals/promotion/my-prompt-eval.yml`:
 
 ```yaml
 prompt-under-eval: |
@@ -71,36 +90,53 @@ model_evaluation:
     - Clarity of explanation
 ```
 
-### 4. Run Evaluations
+### 4. Run Promotion Evaluations
 
 From your repository root:
 
 ```bash
-coe test
+coe promote            # run all evals in evals/promotion/ (also: coe p)
+coe promote my-prompt-eval.yml          # run a single eval
+coe promote my-prompt-eval.yml -r 50   # run 50 times
+coe promote --dir path/to/dir/         # override eval directory
 ```
 
-Run a specific evaluation:
-
-```bash
-coe test my-prompt-eval.yml
-```
-
-Specify number of runs:
-
-```bash
-coe test my-prompt-eval.yml -r 50
-```
+`coe test` still works as a deprecated alias.
 
 ### 5. View the Dashboard
 
 ```bash
-coe dashboard          # open the existing dashboard
+coe dashboard          # open the existing dashboard (also: coe dash, coe d)
 coe dash build         # rebuild from existing result files, then open
 coe dash --build       # same
 coe dash -b            # same
 ```
 
-Opens `tests/coe/results/index.html` in your default browser. Use `build` when a run was interrupted before the dashboard regenerated — it reads the existing result JSON files and rewrites `index.html` without running any evals.
+Opens `evals/promotion/results/index.html` in your default browser. Use `build` when a run was interrupted before the dashboard regenerated.
+
+### 6. Set Up Runtime Evaluation (optional)
+
+Create `evals/runtime/<skill-name>.yml` (see `example/runtime-eval.yml`), then add a `PostToolUse` hook to `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Skill",
+      "hooks": [{
+        "type": "command",
+        "command": "bash -c '[ \"$COE_MODE\" = promotion ] && exit 0; coe runtime-check --from-hook'"
+      }]
+    }]
+  }
+}
+```
+
+The hook fires after each Claude Code skill completes. Test manually with:
+
+```bash
+coe runtime-check --skill my-skill-name
+```
 
 ## Configuration
 
@@ -201,7 +237,8 @@ test_input:
 Array of string matching checks. Four types are supported:
 
 - `contains` / `does_not_contain` — match against the model's text response
-- `file_contains` / `file_does_not_contain` — match against a file on disk; `file` is relative to the repo root. Use these with `runner: claude-code` to verify the model actually changed the right files.
+- `file_contains` / `file_does_not_contain` — match against a file on disk; `file` is relative to the repo root
+- `git_diff_contains` / `git_diff_does_not_contain` — match against `git diff HEAD` output; useful in runtime eval configs to verify a skill modified the expected files
 
 ```yaml
 deterministic_checks:
@@ -248,23 +285,24 @@ Optional Claude-based grading via a direct API call. Always uses the Anthropic A
 model_evaluation:
   enabled: true
   model: claude-sonnet-5-5  # Optional; defaults to model_for_eval
+  pass_threshold: 4         # Score must be >= this to pass (default: 4, range 1-5)
   rubric: |
     Grade 1-5 based on:
     - Relevance to prompt
     - Quality of reasoning
-
-    Return JSON: {"score": <1-5>, "reasoning": "<brief explanation>"}
 ```
+
+`pass_threshold` is particularly useful in runtime eval configs where you want a stricter or looser bar than the promotion default.
 
 ## Results
 
-Results are saved to `tests/coe/results/`:
+Results are saved to `evals/promotion/results/` (or wherever `eval_dir` points in `.coe.yml`):
 
 - `[timestamp].json` - Individual run results
 - `index.html` - Interactive dashboard showing all results
 - `static/` - Supporting assets for the dashboard
 
-Open `tests/coe/results/index.html` in your browser to view the evaluation timeline.
+Open `evals/promotion/results/index.html` in your browser to view the evaluation timeline.
 
 ### Result JSON structure
 
@@ -295,21 +333,21 @@ The dashboard pass rate displayed on prompt cards, per-prompt stats, and the ove
 On macOS, the system may sleep during a long batch run, interrupting it. Wrap the command with `caffeinate` to prevent idle sleep for the duration:
 
 ```bash
-caffeinate -i coe test my-eval.yml -r 50
+caffeinate -i coe promote my-eval.yml -r 50
 ```
 
 To keep a run alive across terminal disconnects or closing the lid, use tmux:
 
 ```bash
 tmux new -s evals
-caffeinate -i coe test my-eval.yml -r 50
+caffeinate -i coe promote my-eval.yml -r 50
 # detach without stopping: Ctrl-B D
 # reattach later:          tmux attach -t evals
 ```
 
-## Example
+## Examples
 
-See `example/sample-eval.yml` for a complete example with both runner types shown.
+See `example/sample-eval.yml` for a complete promotion eval example. See `example/runtime-eval.yml` for a runtime eval config with annotations.
 
 ## License
 

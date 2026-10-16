@@ -3,6 +3,20 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Tuple
 
+
+def load_project_config(cwd: Path) -> Dict[str, Any]:
+    """Load .coe.yml walking up from cwd to the repo root."""
+    current = cwd if isinstance(cwd, Path) else Path(cwd)
+    while current != current.parent:
+        config_file = current / '.coe.yml'
+        if config_file.exists():
+            with open(config_file) as f:
+                return yaml.safe_load(f) or {}
+        if (current / '.git').exists():
+            break
+        current = current.parent
+    return {}
+
 def _find_repo_root(start_path: Path) -> Path:
     current = start_path if start_path.is_dir() else start_path.parent
     while current != current.parent:
@@ -106,7 +120,11 @@ def validate_config(config: Dict[str, Any]) -> None:
     for check in config['deterministic_checks']:
         if 'name' not in check or 'type' not in check or 'values' not in check:
             raise ValueError("Each deterministic check must have 'name', 'type', and 'values'")
-        VALID_CHECK_TYPES = ('contains', 'does_not_contain', 'file_contains', 'file_does_not_contain')
+        VALID_CHECK_TYPES = (
+            'contains', 'does_not_contain',
+            'file_contains', 'file_does_not_contain',
+            'git_diff_contains', 'git_diff_does_not_contain',
+        )
         if check['type'] not in VALID_CHECK_TYPES:
             raise ValueError(f"Invalid check type: {check['type']}")
         if check['type'] in ('file_contains', 'file_does_not_contain') and 'file' not in check:
@@ -163,6 +181,51 @@ def _resolve_prompt(prompt_under_eval: str, yaml_path: Path) -> Tuple[str, str]:
 
     # Otherwise, treat as inline prompt text
     return prompt_under_eval, "inline"
+
+def load_runtime_eval_config(yaml_path: str) -> Dict[str, Any]:
+    """Load and validate a runtime eval YAML (evals/runtime/<skill>.yml)."""
+    yaml_path = Path(yaml_path).resolve()
+
+    if not yaml_path.exists():
+        raise FileNotFoundError(f"Runtime eval file not found: {yaml_path}")
+
+    with open(yaml_path) as f:
+        config = yaml.safe_load(f)
+
+    if not config:
+        raise ValueError(f"Empty or invalid YAML in {yaml_path}")
+
+    if 'skill' not in config or not isinstance(config['skill'], str):
+        raise ValueError("Runtime eval must have a 'skill' field (string)")
+    if 'deterministic_checks' not in config or not isinstance(config['deterministic_checks'], list):
+        raise ValueError("Runtime eval must have a 'deterministic_checks' list")
+
+    for check in config['deterministic_checks']:
+        if 'name' not in check or 'type' not in check or 'values' not in check:
+            raise ValueError("Each deterministic check must have 'name', 'type', and 'values'")
+        VALID_CHECK_TYPES = (
+            'contains', 'does_not_contain',
+            'file_contains', 'file_does_not_contain',
+            'git_diff_contains', 'git_diff_does_not_contain',
+        )
+        if check['type'] not in VALID_CHECK_TYPES:
+            raise ValueError(f"Invalid check type: {check['type']}")
+
+    if 'model_evaluation' in config:
+        me = config['model_evaluation']
+        if not isinstance(me, dict):
+            raise ValueError("model_evaluation must be a dict")
+        if me.get('enabled') and 'rubric' not in me:
+            raise ValueError("model_evaluation must include 'rubric' when enabled")
+        if 'pass_threshold' in me and not isinstance(me['pass_threshold'], int):
+            raise ValueError("model_evaluation.pass_threshold must be an integer")
+
+    repo_root = _find_repo_root(yaml_path)
+    config['_repo_root'] = repo_root
+    config['_eval_file_path'] = yaml_path
+
+    return config
+
 
 def read_prompt_file(prompt_path: Path) -> str:
     with open(prompt_path, 'r') as f:

@@ -1,0 +1,33 @@
+# Runtime eval config — place in evals/runtime/<skill-name>.yml
+# One file per skill. The file name determines which skill this gates.
+
+# The skill name (must match the filename without .yml)
+skill: my-skill-name
+
+deterministic_checks:
+  # git_diff_contains checks the output of `git diff HEAD`
+  - name: Target file was modified
+    type: git_diff_contains
+    values:
+      - "CLAUDE.md"   # or whatever file the skill should update
+
+  # Combine with file_contains for content checks
+  - name: Expected content present in file
+    type: file_contains
+    file: CLAUDE.md
+    values:
+      - "/api/health"
+
+model_evaluation:
+  enabled: true
+  model: claude-haiku-4-5-20251001
+  pass_threshold: 4   # score must be >= this to pass (1–5 scale)
+  rubric: |
+    On a scale of 1–5, evaluate whether the git diff shows changes that are
+    accurate, complete, and consistent with what the skill was supposed to do.
+
+    5 — Perfect: all expected changes present, no errors or omissions.
+    4 — Good: mostly correct with minor imprecision.
+    3 — Partial: some expected changes missing or inaccurate.
+    2 — Poor: mostly incomplete or incorrect.
+    1 — Failing: no meaningful changes, or changes are wrong.
