@@ -418,6 +418,18 @@ def _resolve_runtime_eval_dir(project_config: dict) -> Path:
     return Path.cwd() / rel
 
 
+def _extract_skill_from_audit_path(file_path: str, runtime_eval_dir: Path) -> str:
+    norm = file_path.replace('\\', '/')
+    basename = Path(file_path).name
+    for config in runtime_eval_dir.glob('*.yml'):
+        skill = config.stem
+        if f'/audit_log/{skill}-' in norm:
+            return skill
+        if skill == 'update-docs' and basename == 'audit_log.jsonl':
+            return skill
+    return ''
+
+
 def _hook_log(runtime_eval_dir: Path, skill_name, event: str) -> None:
     try:
         import json as _json
@@ -449,10 +461,17 @@ def cmd_runtime_check(args):
     if from_hook:
         try:
             hook_data = json.loads(sys.stdin.read())
-            if hook_data.get('tool_name') != 'Skill':
+            tool_name = hook_data.get('tool_name')
+            if tool_name == 'Skill':
+                skill_name = hook_data.get('tool_input', {}).get('skill') or skill_name
+            elif tool_name in ('Write', 'Edit', 'MultiEdit'):
+                file_path = hook_data.get('tool_input', {}).get('file_path', '')
+                skill_name = _extract_skill_from_audit_path(file_path, runtime_eval_dir) or skill_name
+                if not skill_name:
+                    sys.exit(0)
+            else:
                 _hook_log(runtime_eval_dir, skill_name, 'wrong_tool')
                 sys.exit(0)
-            skill_name = hook_data.get('tool_input', {}).get('skill') or skill_name
         except Exception:
             _hook_log(runtime_eval_dir, skill_name, 'stdin_error')
             sys.exit(0)
