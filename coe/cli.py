@@ -421,8 +421,7 @@ def _resolve_runtime_eval_dir(project_config: dict) -> Path:
 def cmd_runtime_check(args):
     """Handle 'coe runtime-check' command — grade a skill's output in real time."""
     import json
-    import hashlib
-    import tempfile
+    import time
 
     coe_dir = Path(__file__).parent.parent
     env_file = coe_dir / '.env'
@@ -459,8 +458,7 @@ def cmd_runtime_check(args):
 
     repo_root = config['_repo_root']
 
-    repo_hash = hashlib.md5(str(repo_root).encode()).hexdigest()[:8]
-    sentinel_path = Path(tempfile.gettempdir()) / f".coe-sentinel-{repo_hash}-{skill_name}"
+    sentinel_path = runtime_eval_dir / f".coe-sentinel-{skill_name}"
 
     retry_count = 0
     if sentinel_path.exists():
@@ -472,11 +470,13 @@ def cmd_runtime_check(args):
     retry_count += 1
     sentinel_path.write_text(json.dumps({'retries': retry_count, 'skill': skill_name}))
 
+    _start = time.monotonic()
     det_results = run_deterministic_checks('', config['deterministic_checks'], repo_root)
     det_passed = all(r['overall_pass'] for r in det_results.values())
 
     model_eval_config = config.get('model_evaluation', {})
     model_eval_results = None
+    diff = ''
     if model_eval_config.get('enabled'):
         grader_model = model_eval_config.get('model', 'claude-haiku-4-5-20251001')
         diff = subprocess.run(
@@ -494,6 +494,21 @@ def cmd_runtime_check(args):
     overall_passed = det_passed
     if model_eval_results and not model_eval_results.get('error'):
         overall_passed = overall_passed and (model_eval_results['score'] >= pass_threshold)
+
+    _duration = time.monotonic() - _start
+    write_result(
+        {
+            'output': diff,
+            'deterministic_checks': det_results,
+            'model_evaluation': model_eval_results,
+            'passed': overall_passed,
+            'duration_seconds': round(_duration, 3),
+            'timestamp': datetime.now().isoformat(),
+            'retry_count': retry_count,
+        },
+        skill_name,
+        runtime_eval_dir,
+    )
 
     if overall_passed:
         sentinel_path.unlink(missing_ok=True)
