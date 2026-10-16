@@ -418,6 +418,17 @@ def _resolve_runtime_eval_dir(project_config: dict) -> Path:
     return Path.cwd() / rel
 
 
+def _hook_log(runtime_eval_dir: Path, skill_name, event: str) -> None:
+    try:
+        import json as _json
+        log_path = runtime_eval_dir / '.coe-hook.log'
+        entry = _json.dumps({'ts': datetime.now().isoformat(), 'skill': skill_name, 'event': event})
+        with open(log_path, 'a') as f:
+            f.write(entry + '\n')
+    except Exception:
+        pass
+
+
 def cmd_runtime_check(args):
     """Handle 'coe runtime-check' command — grade a skill's output in real time."""
     import json
@@ -429,30 +440,37 @@ def cmd_runtime_check(args):
         load_dotenv(env_file)
 
     skill_name = getattr(args, 'skill', None)
+    from_hook = getattr(args, 'from_hook', False)
 
-    if getattr(args, 'from_hook', False):
+    # Resolve early so _hook_log can write even before the skill name is known
+    project_config = load_project_config(Path.cwd())
+    runtime_eval_dir = _resolve_runtime_eval_dir(project_config)
+
+    if from_hook:
         try:
             hook_data = json.loads(sys.stdin.read())
             if hook_data.get('tool_name') != 'Skill':
+                _hook_log(runtime_eval_dir, skill_name, 'wrong_tool')
                 sys.exit(0)
             skill_name = hook_data.get('tool_input', {}).get('skill') or skill_name
         except Exception:
+            _hook_log(runtime_eval_dir, skill_name, 'stdin_error')
             sys.exit(0)
 
     if not skill_name:
         print("No skill name. Use --skill SKILL_NAME or --from-hook.", file=sys.stderr)
         sys.exit(1)
 
-    project_config = load_project_config(Path.cwd())
-    runtime_eval_dir = _resolve_runtime_eval_dir(project_config)
     config_path = runtime_eval_dir / f"{skill_name}.yml"
 
     if not config_path.exists():
+        _hook_log(runtime_eval_dir, skill_name, 'no_config')
         sys.exit(0)
 
     try:
         config = load_runtime_eval_config(str(config_path))
     except Exception as e:
+        _hook_log(runtime_eval_dir, skill_name, 'config_error')
         print(f"Error loading runtime eval config: {e}", file=sys.stderr)
         sys.exit(0)
 
@@ -512,6 +530,7 @@ def cmd_runtime_check(args):
 
     if overall_passed:
         sentinel_path.unlink(missing_ok=True)
+        _hook_log(runtime_eval_dir, skill_name, 'pass')
         print(f"  {_GREEN}✓ Runtime eval passed{_RESET} for skill '{skill_name}' (attempt {retry_count})")
         sys.exit(0)
 
@@ -538,10 +557,12 @@ def cmd_runtime_check(args):
 
     if retry_count >= 3:
         sentinel_path.unlink(missing_ok=True)
+        _hook_log(runtime_eval_dir, skill_name, 'escalate')
         header = "HUMAN ESCALATION REQUIRED: skill has failed 3 consecutive runtime evaluations."
         lines = [header, "Do not retry automatically. A human must review the output.", ""] + lines
         lines.append("Session halted after 3 failed attempts.")
     else:
+        _hook_log(runtime_eval_dir, skill_name, 'fail')
         remaining = 3 - retry_count
         lines.append(f"Please review the issues above and retry the skill. ({remaining} attempt(s) remaining)")
 
