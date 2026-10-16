@@ -530,8 +530,8 @@ def cmd_runtime_check(args):
         remaining = 3 - retry_count
         lines.append(f"Please review the issues above and retry the skill. ({remaining} attempt(s) remaining)")
 
-    print("\n".join(lines), file=sys.stderr)
-    sys.exit(2)
+    print(json.dumps({"decision": "block", "reason": "\n".join(lines)}))
+    sys.exit(0)
 
 
 def main():
